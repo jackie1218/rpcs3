@@ -115,7 +115,14 @@ namespace gl
 			 id += s_dma_block_size)
 		{
 			ensure((id % s_dma_block_size) == 0);
-			g_dma_pool[id]->set_parent(new_owner.get());
+			// Use find() instead of operator[] so we do not default-construct a null unique_ptr and
+			// then dereference it. If a sub-block was never allocated separately (e.g. because the
+			// original allocation already covered this range), there is nothing to reparent here.
+			const auto it = g_dma_pool.find(id);
+			if (it != g_dma_pool.end() && it->second)
+			{
+				it->second->set_parent(new_owner.get());
+			}
 		}
 
 		block = std::move(new_owner);

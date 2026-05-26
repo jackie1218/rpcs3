@@ -266,7 +266,10 @@ namespace rsx
 						if (section_fills_target(sections[idx]))
 						{
 							const auto remaining = sections.size() - idx;
-							std::memcpy(
+							// memmove (not memcpy) because src (&sections[idx]) and dst (sections.data())
+							// alias the same buffer whenever remaining > idx (i.e. when the surviving
+							// tail overlaps the prefix we're writing into). memcpy is UB in that case.
+							std::memmove(
 								sections.data(),
 								&sections[idx],
 								remaining * sizeof(sections[0])
