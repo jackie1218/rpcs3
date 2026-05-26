@@ -2664,7 +2664,8 @@ void thread_ctrl::wait_until(u64* wait_time, u64 add_time, u64 min_wait, bool up
 	{
 		if (update_to_current_time)
 		{
-			*wait_time = current_time + (add_time - (current_time - *wait_time) % add_time);
+			// Guard against divide-by-zero when add_time defaulted to 0
+			*wait_time = add_time ? current_time + (add_time - (current_time - *wait_time) % add_time) : current_time;
 		}
 		else if (!min_wait)
 		{

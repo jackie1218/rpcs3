@@ -96,7 +96,7 @@ bool try_to_int64(s64* out, std::string_view value, s64 min, s64 max, std::strin
 		start += 1;
 	}
 
-	if (start[0] == '0' && value.size() >= 2 && (start[1] == 'x' || start[1] == 'X'))
+	if (start < end && start[0] == '0' && end - start >= 2 && (start[1] == 'x' || start[1] == 'X'))
 	{
 		// Limited hex support
 		base = 16;
