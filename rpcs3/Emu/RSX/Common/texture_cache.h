@@ -2344,6 +2344,7 @@ namespace rsx
 				attributes.depth = 6;
 				subsurface_count = 1;
 				tex_size = static_cast<u32>(get_texture_size(tex));
+				if (!attributes.pitch) [[unlikely]] return {};
 				required_surface_height = tex_size / attributes.pitch;
 				attributes.slice_h = required_surface_height / attributes.depth;
 				break;
@@ -2351,6 +2352,7 @@ namespace rsx
 				attributes.depth = tex.depth();
 				subsurface_count = 1;
 				tex_size = static_cast<u32>(get_texture_size(tex));
+				if (!attributes.pitch || !attributes.depth) [[unlikely]] return {};
 				required_surface_height = tex_size / attributes.pitch;
 				attributes.slice_h = required_surface_height / attributes.depth;
 				break;

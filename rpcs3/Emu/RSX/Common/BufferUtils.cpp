@@ -645,6 +645,11 @@ void write_index_array_for_non_indexed_non_native_primitive_to_buffer(char* dst,
 	switch (draw_mode)
 	{
 	case rsx::primitive_type::line_loop:
+		// Degenerate draw with no vertices: nothing to emit and no closing index.
+		if (!count)
+		{
+			return;
+		}
 		iota16(typedDst, count);
 		typedDst[count] = 0;
 		return;
