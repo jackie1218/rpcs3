@@ -1800,6 +1800,21 @@ namespace vm
 		, size(ar)
 		, flags(ar)
 	{
+		// Validate attacker-controlled header fields from the savestate before
+		// using them to drive host allocations / g_pages writes.
+		if (addr % 0x10000 != 0 || size == 0 || size % 0x10000 != 0 || u64{addr} + size > 0x1'0000'0000ull)
+		{
+			fmt::throw_exception("Invalid block_t in savestate: addr=0x%x size=0x%x flags=0x%x", addr, size, flags);
+		}
+
+		// Reject unknown / disallowed flag bits. process_block_flags() is idempotent on a
+		// well-formed flag set, so any change indicates the input was malformed.
+		const u64 allowed_flags_mask = u64{page_size_mask} | stack_guarded | preallocated | bf0_mask;
+		if ((flags & ~allowed_flags_mask) != 0 || process_block_flags(flags) != flags)
+		{
+			fmt::throw_exception("Invalid block_t in savestate: addr=0x%x size=0x%x flags=0x%x", addr, size, flags);
+		}
+
 		if (flags & preallocated)
 		{
 			m_common = std::make_shared<utils::shm>(size, fmt::format("_block_x%08x", addr));
@@ -1808,6 +1823,11 @@ namespace vm
 		}
 
 		std::shared_ptr<utils::shm> null_shm;
+
+		// Cap the loop to one iteration per 4 KiB page in this block so a malformed
+		// savestate can't drive an unbounded loop.
+		const u64 max_iterations = u64{this->size} / 4096;
+		u64 iteration = 0;
 
 		while (true)
 		{
@@ -1819,8 +1839,22 @@ namespace vm
 				break;
 			}
 
+			if (++iteration > max_iterations)
+			{
+				fmt::throw_exception("Too many page entries in block_t savestate: addr=0x%x size=0x%x", this->addr, this->size);
+			}
+
 			const u32 addr0 = ar;
 			const u32 size0 = ar;
+
+			// Validate the per-page range before touching g_pages / try_alloc.
+			if (addr0 % 0x10000 != 0 || size0 == 0 || size0 % 0x10000 != 0
+				|| u64{addr0} + size0 > 0x1'0000'0000ull
+				|| u64{addr0} < u64{this->addr}
+				|| u64{addr0} + size0 > u64{this->addr} + this->size)
+			{
+				fmt::throw_exception("Invalid page range in block_t savestate: addr=0x%x size=0x%x (block addr=0x%x size=0x%x)", addr0, size0, this->addr, this->size);
+			}
 
 			u64 pflags = 0;
 
@@ -1850,12 +1884,31 @@ namespace vm
 
 			// Map the memory through the same method as alloc() and falloc()
 			// Copy the shared handle unconditionally
-			ensure(try_alloc(addr0, pflags, size0, ::as_rvalue(flags & preallocated ? null_shm : shared[ar.pop<usz>()])));
+			std::shared_ptr<utils::shm> shm_arg;
+			if (flags & preallocated)
+			{
+				shm_arg = null_shm;
+			}
+			else
+			{
+				const usz idx = ar.pop<usz>();
+				if (idx >= shared.size())
+				{
+					fmt::throw_exception("Invalid shared shm index in savestate: %u (shared.size()=%u)", idx, shared.size());
+				}
+				shm_arg = shared[idx];
+			}
+
+			ensure(try_alloc(addr0, pflags, size0, std::move(shm_arg)));
 
 			if (flags & preallocated)
 			{
 				// Load binary image
 				const u32 guard_size = flags & stack_guarded ? 0x1000 : 0;
+				if (u64{size0} <= u64{guard_size} * 2)
+				{
+					fmt::throw_exception("Invalid page size in block_t savestate: size=0x%x guard_size=0x%x", size0, guard_size);
+				}
 				serialize_memory_bytes(ar, vm::get_super_ptr<u8>(addr0 + guard_size), size0 - guard_size * 2);
 			}
 		}
@@ -2391,13 +2444,22 @@ namespace vm
 			serialize_memory_bytes(ar, shm->map_self(), shm->size());
 		}
 
+		// Validate the count BEFORE we tear down the existing g_locations so a
+		// malformed savestate can't leave the emulator in a half-destroyed state.
+		const usz g_locations_count = ar.pop<usz>();
+		constexpr usz g_locations_max = 64; // Well above the typical vm location count.
+		if (g_locations_count > g_locations_max)
+		{
+			fmt::throw_exception("Invalid g_locations count in savestate: %u (max=%u)", g_locations_count, g_locations_max);
+		}
+
 		for (auto& block : g_locations)
 		{
 			if (block) _unmap_block(block);
 		}
 
 		g_locations.clear();
-		g_locations.resize(ar.pop<usz>());
+		g_locations.resize(g_locations_count);
 
 		for (auto& loc : g_locations)
 		{

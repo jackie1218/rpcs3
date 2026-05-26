@@ -51,7 +51,12 @@ lv2_memory::lv2_memory(utils::serial& ar)
 	{
 		if (addr)
 		{
-			return make_single_value(ensure(vm::get(vm::any, addr)->peek(addr).second));
+			const auto area = vm::get(vm::any, addr);
+			if (!area)
+			{
+				fmt::throw_exception("Invalid lv2_memory savestate: no vm area at addr=0x%x", addr);
+			}
+			return make_single_value(ensure(area->peek(addr).second));
 		}
 
 		return null_ptr;
