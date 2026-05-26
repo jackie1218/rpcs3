@@ -852,7 +852,18 @@ error_code sys_fs_test(ppu_thread&, u32 arg1, u32 arg2, vm::ptr<u32> arg3, u32 a
 		return CELL_EBADF;
 	}
 
-	for (u32 i = 0; i < buf_size; i++)
+	// Bail out on the degenerate buf_size == 0 case: with u32 wraparound
+	// `buf[buf_size - 1]` would otherwise write at buf[0xFFFFFFFF].
+	if (!buf_size)
+	{
+		return CELL_OK;
+	}
+
+	// file->name is a fixed std::array<char, 0x420>; clamp the host-side read
+	// so guests can't drive a buf_size > 0x420 into an OOB read.
+	const u32 max_copy = std::min<u32>(buf_size, static_cast<u32>(file->name.size()));
+
+	for (u32 i = 0; i < max_copy; i++)
 	{
 		if (!(buf[i] = file->name[i]))
 		{
@@ -860,7 +871,7 @@ error_code sys_fs_test(ppu_thread&, u32 arg1, u32 arg2, vm::ptr<u32> arg3, u32 a
 		}
 	}
 
-	buf[buf_size - 1] = 0;
+	buf[max_copy - 1] = 0;
 	return CELL_OK;
 }
 

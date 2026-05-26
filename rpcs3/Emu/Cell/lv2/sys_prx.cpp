@@ -439,6 +439,14 @@ error_code _sys_prx_load_module_on_memcontainer_by_fd(ppu_thread& ppu, s32 fd, u
 
 static error_code prx_load_module_list(ppu_thread& ppu, s32 count, vm::cpptr<char, u32, u64> path_list, u32 /*mem_ct*/, u64 flags, vm::ptr<sys_prx_load_module_option_t> pOpt, vm::ptr<u32> id_list)
 {
+	// Cap guest-supplied count and require a valid id_list; the failure
+	// rollback path memsets count*4 bytes through id_list, so an unbounded
+	// or NULL value lets the guest scribble far past its own buffer.
+	if (count <= 0 || count > 0x100 || !id_list || !path_list)
+	{
+		return CELL_EINVAL;
+	}
+
 	if (flags != 0)
 	{
 		if (flags & SYS_PRX_LOAD_MODULE_FLAGS_INVALIDMASK)
@@ -466,7 +474,7 @@ static error_code prx_load_module_list(ppu_thread& ppu, s32 count, vm::cpptr<cha
 				_sys_prx_unload_module(ppu, id_list[i], 0, vm::null);
 			}
 
-			// Fill with -1
+			// Fill with -1 (count is bounded above, safe to memset)
 			std::memset(id_list.get_ptr(), -1, count * sizeof(id_list[0]));
 			return result;
 		}

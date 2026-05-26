@@ -252,6 +252,11 @@ u32 cellGcmGetReportDataLocation(ppu_thread& ppu, u32 index, u32 location)
 	cellGcmSys.warning("cellGcmGetReportDataLocation(index=%d, location=%d)", index, location);
 
 	vm::ptr<CellGcmReportData> report = cellGcmGetReportDataAddressLocation(ppu, index, location);
+	if (!report)
+	{
+		// cellGcmGetReportDataAddressLocation returns vm::null on bad index.
+		return 0;
+	}
 	return report->value;
 }
 
@@ -260,6 +265,10 @@ u64 cellGcmGetTimeStampLocation(ppu_thread& ppu, u32 index, u32 location)
 	cellGcmSys.trace("cellGcmGetTimeStampLocation(index=%d, location=%d)", index, location);
 
 	vm::ptr<CellGcmReportData> report = cellGcmGetReportDataAddressLocation(ppu, index, location);
+	if (!report)
+	{
+		return 0;
+	}
 
 	// Timestamp reports don't need host GPU access and are much faster to emulate
 	return vm::get_super_ptr<CellGcmReportData>(report.addr())->timer;
