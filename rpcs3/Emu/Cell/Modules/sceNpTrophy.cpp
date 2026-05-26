@@ -474,6 +474,22 @@ error_code sceNpTrophyCreateContext(vm::ptr<u32> context, vm::cptr<SceNpCommunic
 		name_str = name_str.substr(0, pos);
 	}
 
+	// Reject names containing characters that would later flow into VFS paths (e.g. '/', '\\', '.').
+	// commId->data is 9 raw bytes from the caller; allow only [A-Za-z0-9_-] and require non-empty length.
+	if (name_str.empty())
+	{
+		return SCE_NP_TROPHY_ERROR_INVALID_NP_COMM_ID;
+	}
+
+	for (char c : name_str)
+	{
+		const bool valid = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+		if (!valid)
+		{
+			return SCE_NP_TROPHY_ERROR_INVALID_NP_COMM_ID;
+		}
+	}
+
 	const SceNpCommunicationSignature commSign_data = *commSign;
 
 	if (read_from_ptr<be_t<u32>>(commSign_data.data, 0) != NP_TROPHY_COMM_SIGN_MAGIC)

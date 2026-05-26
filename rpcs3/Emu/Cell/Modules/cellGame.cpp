@@ -1831,7 +1831,10 @@ error_code cellGameThemeInstallFromBuffer(ppu_thread& ppu, u32 fileSize, u32 buf
 		return CELL_GAME_ERROR_PARAM;
 	}
 
-	const std::string hash = sha256_get_hash(reinterpret_cast<char*>(buf.get_ptr()), fileSize, true);
+	// Bound the hash input to the actual buffer contents to avoid out-of-bounds reads when a callback is supplied
+	// and fileSize exceeds bufSize. The earlier guard only rejects oversized fileSize when no callback is provided.
+	const u32 hash_size = std::min<u32>(fileSize, bufSize);
+	const std::string hash = sha256_get_hash(reinterpret_cast<char*>(buf.get_ptr()), hash_size, true);
 	const std::string dst_path = vfs::get(fmt::format("/dev_hdd0/theme/%s_%s.p3t", Emu.GetTitleID(), hash)); // TODO: this is renamed with some scheme
 
 	if (fs::file theme = fs::file(dst_path, fs::write_new + fs::isfile)) // TODO: new file is write protected

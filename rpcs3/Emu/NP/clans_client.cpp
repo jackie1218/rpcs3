@@ -401,8 +401,10 @@ namespace clan
 			i++;
 		}
 
+		// Clamp the result count to the writable capacity of the output vector so consumers
+		// don't read past the populated entries based on a server-supplied count.
 		page_result = SceNpClansPagingResult{
-			.count = results_count,
+			.count = std::min<u32>(results_count, ::size32(clan_list)),
 			.total = total_count};
 
 		return SCE_NP_CLANS_SUCCESS;
@@ -569,9 +571,11 @@ namespace clan
 			i++;
 		}
 
+		// Clamp the result count to the writable capacity of the output vector so consumers
+		// don't read past the populated entries based on a server-supplied count.
 		page_result = SceNpClansPagingResult
 		{
-			.count = results_count,
+			.count = std::min<u32>(results_count, ::size32(mem_list)),
 			.total = total_count
 		};
 
@@ -630,9 +634,11 @@ namespace clan
 			i++;
 		}
 
+		// Clamp the result count to the writable capacity of the output vector so consumers
+		// don't read past the populated entries based on a server-supplied count.
 		page_result = SceNpClansPagingResult
 		{
-			.count = results_count,
+			.count = std::min<u32>(results_count, ::size32(bl)),
 			.total = total_count
 		};
 
@@ -728,9 +734,11 @@ namespace clan
 			i++;
 		}
 
+		// Clamp the result count to the writable capacity of the output vector so consumers
+		// don't read past the populated entries based on a server-supplied count.
 		page_result = SceNpClansPagingResult
 		{
-			.count = results_count,
+			.count = std::min<u32>(results_count, ::size32(clan_list)),
 			.total = total_count
 		};
 
@@ -1083,9 +1091,11 @@ namespace clan
 			i++;
 		}
 
+		// Clamp the result count to the writable capacity of the output vector so consumers
+		// don't read past the populated entries based on a server-supplied count.
 		page_result = SceNpClansPagingResult
 		{
-			.count = results_count,
+			.count = std::min<u32>(results_count, ::size32(announcements)),
 			.total = total_count
 		};
 
