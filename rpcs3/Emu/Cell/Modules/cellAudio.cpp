@@ -398,7 +398,15 @@ cell_audio_thread::cell_audio_thread(utils::serial& ar)
 
 	ar(key_count, event_period);
 
-	keys.resize(ar);
+	// Reject corrupt/malicious savestates before they trigger a huge allocation
+	// in keys.resize(). MAX_AUDIO_EVENT_QUEUES is the cap enforced by
+	// cellAudioSetNotifyEventQueue at runtime.
+	const usz key_cnt = ar;
+	if (key_cnt > MAX_AUDIO_EVENT_QUEUES)
+	{
+		fmt::throw_exception("Invalid audio keys count in savestate: %u (max %u)", key_cnt, static_cast<u32>(MAX_AUDIO_EVENT_QUEUES));
+	}
+	keys.resize(key_cnt);
 
 	for (key_info& k : keys)
 	{
@@ -407,6 +415,49 @@ cell_audio_thread::cell_audio_thread(utils::serial& ar)
 	}
 
 	ar(ports);
+
+	// audio_port has ENABLE_BITWISE_SERIALIZATION, so the deserializer just
+	// memcpy'd the savestate bytes over each port. Validate every guest-
+	// influenced field that downstream code (position(), tag(), mix(), etc.)
+	// treats as a trusted invariant -- num_blocks==0 would div-by-zero in
+	// audio_port::position, out-of-range channel counts mis-tag buffers,
+	// and a stale prev_touched_tag_nr indexes last_tag_value[] out of bounds.
+	for (const audio_port& port : ports)
+	{
+		// State must be a valid enumerator regardless of whether the port is opened.
+		const audio_port_state st = port.state.load();
+		if (st != audio_port_state::closed && st != audio_port_state::opened && st != audio_port_state::started)
+		{
+			fmt::throw_exception("Invalid audio port state in savestate: %u", static_cast<u32>(st));
+		}
+
+		// Closed ports are zero-initialized so skip per-field range checks for them.
+		if (st == audio_port_state::closed)
+		{
+			continue;
+		}
+
+		if (port.num_channels != CELL_AUDIO_PORT_2CH && port.num_channels != CELL_AUDIO_PORT_8CH)
+		{
+			fmt::throw_exception("Invalid audio port num_channels in savestate: %u", port.num_channels);
+		}
+
+		if (port.num_blocks != 2 && port.num_blocks != 4 && port.num_blocks != CELL_AUDIO_BLOCK_8
+			&& port.num_blocks != CELL_AUDIO_BLOCK_16 && port.num_blocks != CELL_AUDIO_BLOCK_32)
+		{
+			fmt::throw_exception("Invalid audio port num_blocks in savestate: %u", port.num_blocks);
+		}
+
+		if (port.cur_pos >= port.num_blocks)
+		{
+			fmt::throw_exception("Invalid audio port cur_pos in savestate: %u (num_blocks=%u)", port.cur_pos, port.num_blocks);
+		}
+
+		if (port.prev_touched_tag_nr != umax && port.prev_touched_tag_nr >= PORT_BUFFER_TAG_COUNT)
+		{
+			fmt::throw_exception("Invalid audio port prev_touched_tag_nr in savestate: %u", port.prev_touched_tag_nr);
+		}
+	}
 }
 
 void cell_audio_thread::save(utils::serial& ar)

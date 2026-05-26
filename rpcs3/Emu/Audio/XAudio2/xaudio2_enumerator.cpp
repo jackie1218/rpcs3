@@ -70,10 +70,12 @@ std::vector<audio_device_enumerator::audio_device> xaudio2_enumerator::get_outpu
 			continue;
 		}
 
-		if (std::wstring_view{id}.empty())
+		// GetId can theoretically succeed with a null/empty id; constructing
+		// std::wstring_view{nullptr} is UB so check the pointer explicitly first.
+		if (!id || !*id)
 		{
 			xaudio_dev_enum.error("Empty device id - skipping");
-			CoTaskMemFree(id);
+			if (id) CoTaskMemFree(id);
 			continue;
 		}
 

@@ -77,6 +77,15 @@ std::vector<audio_device_enumerator::audio_device> cubeb_enumerator::get_output_
 			continue;
 		}
 
+		// cubeb_device_info::device_id / friendly_name are `const char*` that
+		// backends may leave null. Constructing std::string from a null pointer
+		// is UB, so skip any device without a usable id or name.
+		if (!dev_info.device_id || !dev_info.friendly_name)
+		{
+			cubeb_dev_enum.warning("Skipping device with null id or name");
+			continue;
+		}
+
 		audio_device dev =
 		{
 			.id = std::string{dev_info.device_id},
