@@ -286,9 +286,9 @@ void usb_device_guncon3::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint,
 			return;
 		}
 
-		// Expand 0..+wh to -32767..+32767
-		gc.gun_x = (mouse_data.x_pos * USHRT_MAX / mouse_data.x_max) - SHRT_MAX;
-		gc.gun_y = (mouse_data.y_pos * -USHRT_MAX / mouse_data.y_max) + SHRT_MAX;
+		// Expand 0..+wh to -32767..+32767 (force 64-bit math; x_pos*USHRT_MAX overflows s32 for high-DPI inputs)
+		gc.gun_x = static_cast<s32>(static_cast<s64>(mouse_data.x_pos) * USHRT_MAX / mouse_data.x_max - SHRT_MAX);
+		gc.gun_y = static_cast<s32>(static_cast<s64>(mouse_data.y_pos) * -USHRT_MAX / mouse_data.y_max + SHRT_MAX);
 	}
 
 	guncon3_encode(&gc, buf, m_key.data());

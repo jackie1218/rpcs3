@@ -524,7 +524,8 @@ void usb_device_usio::emulate_card_reader(std::vector<u8>& buf, u16 reg)
 		}
 		case 0xFB:
 		{
-			if (payload_length >= 5)
+			// Both the self-reported payload_length and the actual buffer size must cover up to payload[3].
+			if (payload_length >= 5 && buf.size() >= 6 + 5)
 			{
 				if (*reinterpret_cast<const le_t<u16>*>(&payload[0]) == 0x0140)
 				{
