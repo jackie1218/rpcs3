@@ -1061,6 +1061,11 @@ error_code _sys_prx_get_module_info(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<
 	pOpt->info->all_segments_num = ::size32(prx->segs);
 	if (pOpt->info->filename)
 	{
+		if (pOpt->info->filename_size > SYS_PRX_MODULE_FILENAME_SIZE)
+		{
+			return CELL_PRX_ERROR_INVAL;
+		}
+
 		std::span dst(pOpt->info->filename.get_ptr(), pOpt->info->filename_size);
 		strcpy_trunc(dst, vfs::retrieve(prx->path));
 	}

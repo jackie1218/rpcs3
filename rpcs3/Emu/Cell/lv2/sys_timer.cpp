@@ -174,6 +174,11 @@ error_code sys_timer_create(ppu_thread& ppu, vm::ptr<u32> timer_id)
 
 	sys_timer.warning("sys_timer_create(timer_id=*0x%x)", timer_id);
 
+	if (!timer_id)
+	{
+		return CELL_EFAULT;
+	}
+
 	if (auto ptr = idm::make_ptr<lv2_obj, lv2_timer>())
 	{
 		auto& thread = g_fxo->get<named_thread<lv2_timer_thread>>();

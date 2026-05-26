@@ -641,6 +641,11 @@ error_code sys_event_port_create(cpu_thread& cpu, vm::ptr<u32> eport_id, s32 por
 
 	sys_event.warning("sys_event_port_create(eport_id=*0x%x, port_type=%d, name=0x%llx)", eport_id, port_type, name);
 
+	if (!eport_id)
+	{
+		return CELL_EFAULT;
+	}
+
 	if (port_type != SYS_EVENT_PORT_LOCAL && port_type != SYS_EVENT_PORT_IPC)
 	{
 		sys_event.error("sys_event_port_create(): unknown port type (%d)", port_type);

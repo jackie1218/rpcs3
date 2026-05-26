@@ -1159,6 +1159,11 @@ error_code sys_fs_open(ppu_thread& ppu, vm::cptr<char> path, s32 flags, vm::ptr<
 
 	sys_fs.warning("sys_fs_open(path=%s, flags=%#o, fd=*0x%x, mode=%#o, arg=*0x%x, size=0x%llx)", path, flags, fd, mode, arg, size);
 
+	if (!fd)
+	{
+		return CELL_EFAULT;
+	}
+
 	const auto [path_error, vpath] = translate_to_str(path);
 
 	if (path_error)
@@ -1437,6 +1442,11 @@ error_code sys_fs_opendir(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<u32> fd)
 	lv2_obj::sleep(ppu);
 
 	sys_fs.warning("sys_fs_opendir(path=%s, fd=*0x%x)", path, fd);
+
+	if (!fd)
+	{
+		return CELL_EFAULT;
+	}
 
 	const auto [path_error, vpath] = translate_to_str(path);
 
@@ -2347,6 +2357,15 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 
 		arg->out_code = CELL_OK;
 
+		// Cap guest-supplied sizes to sane maxima (real values are 0x29 for model, 0x15 for serial)
+		constexpr u32 max_model_size = 0x100;
+		constexpr u32 max_serial_size = 0x100;
+
+		if (arg->model_size > max_model_size || arg->serial_size > max_serial_size)
+		{
+			return CELL_EINVAL;
+		}
+
 		if (const auto size = arg->model_size; size > 0)
 			strcpy_trunc(std::span(arg->model.get_ptr(), size),
 				fmt::format("%-*s", size - 1, g_cfg.sys.hdd_model.to_string())); // Example: "TOSHIBA MK3265GSX H                     "
@@ -2618,6 +2637,15 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 		// NOTE: This function is actually capable of reading only one entry at a time
 		if (const u32 max = arg->max)
 		{
+			// Bound guest-supplied max against the size of an entry to prevent overflow,
+			// and verify the destination buffer range is actually writable guest memory
+			const u64 byte_size = static_cast<u64>(max) * arg->ptr.size();
+
+			if (byte_size > u32{umax} || !vm::check_addr(arg->ptr.addr(), vm::page_writable, static_cast<u32>(byte_size)))
+			{
+				return CELL_EFAULT;
+			}
+
 			const auto arg_ptr = +arg->ptr;
 
 			if (auto* info = directory->dir_read())
@@ -2869,6 +2897,11 @@ error_code sys_fs_fget_block_size(ppu_thread& ppu, u32 fd, vm::ptr<u64> sector_s
 
 	sys_fs.warning("sys_fs_fget_block_size(fd=%d, sector_size=*0x%x, block_size=*0x%x, arg4=*0x%x, out_flags=*0x%x)", fd, sector_size, block_size, arg4, out_flags);
 
+	if (!sector_size || !block_size || !arg4 || !out_flags)
+	{
+		return CELL_EFAULT;
+	}
+
 	const auto file = idm::get_unlocked<lv2_fs_object, lv2_file>(fd);
 
 	if (!file)
@@ -2892,6 +2925,11 @@ error_code sys_fs_get_block_size(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<u
 	lv2_obj::sleep(ppu);
 
 	sys_fs.warning("sys_fs_get_block_size(path=%s, sector_size=*0x%x, block_size=*0x%x, arg4=*0x%x)", path, sector_size, block_size, arg4);
+
+	if (!sector_size || !block_size || !arg4)
+	{
+		return CELL_EFAULT;
+	}
 
 	const auto [path_error, vpath] = translate_to_str(path);
 
@@ -3137,7 +3175,7 @@ error_code sys_fs_disk_free(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<u64> t
 
 	sys_fs.warning("sys_fs_disk_free(path=%s total_free=*0x%x avail_free=*0x%x)", path, total_free, avail_free);
 
-	if (!path)
+	if (!path || !total_free || !avail_free)
 		return CELL_EFAULT;
 
 	if (!path[0])
@@ -3214,6 +3252,12 @@ error_code sys_fs_utime(ppu_thread& ppu, vm::cptr<char> path, vm::cptr<CellFsUti
 	lv2_obj::sleep(ppu);
 
 	sys_fs.warning("sys_fs_utime(path=%s, timep=*0x%x)", path, timep);
+
+	if (!timep)
+	{
+		return CELL_EFAULT;
+	}
+
 	sys_fs.warning("** actime=%u, modtime=%u", timep->actime, timep->modtime);
 
 	const auto [path_error, vpath] = translate_to_str(path);
