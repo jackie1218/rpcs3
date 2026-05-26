@@ -1801,6 +1801,17 @@ void spu_thread::serialize_common(utils::serial& ar)
 		, ch_out_mbox.data, ch_out_intr_mbox.data, snr_config, ch_snr1.data, ch_snr2.data, ch_events.raw().all, interrupts_enabled
 		, run_ctrl, exit_status.data, status_npc.raw().status, ch_dec_start_timestamp, ch_dec_value, is_dec_frozen);
 
+	if (!ar.is_writing())
+	{
+		// Reject corrupt/malicious savestates before they can scribble past
+		// the fixed-size mfc_queue / vals[] arrays or send the SPU dispatcher
+		// off into unmapped LS.
+		if (mfc_size > std::size(mfc_queue) || pc >= SPU_LS_SIZE || (pc & 3) != 0)
+		{
+			fmt::throw_exception("SPU savestate rejected: mfc_size=0x%x pc=0x%x", mfc_size, pc);
+		}
+	}
+
 	ar(std::span(mfc_queue, mfc_size));
 
 	u32 vals[4]{};
@@ -1813,6 +1824,10 @@ void spu_thread::serialize_common(utils::serial& ar)
 	else
 	{
 		const u8 count = ar;
+		if (count > std::size(vals))
+		{
+			fmt::throw_exception("SPU savestate rejected: ch_in_mbox count=%u exceeds capacity 4", count);
+		}
 		ar(std::span(vals, count));
 		ch_in_mbox.set_values(count, vals[0], vals[1], vals[2], vals[3]);
 	}
