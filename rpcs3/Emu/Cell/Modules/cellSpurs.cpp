@@ -2002,7 +2002,10 @@ s32 cellSpursGetInfo(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursInfo> info)
 	info->traceBuffer = vm::addr_t{trace_addr & ~3};
 	info->traceMode = trace_addr & 3;
 
-	const u8 name_size = spurs->prefixSize;
+	// Clamp guest-mutable prefixSize against the bound enforced by cellSpursInitializeWithAttribute2.
+	// namePrefix is a fixed 16-byte field and the trailing NUL write at [name_size] must stay in-bounds.
+	static_assert(sizeof(info->namePrefix) > CELL_SPURS_NAME_MAX_LENGTH, "namePrefix must hold prefix + NUL");
+	const u8 name_size = std::min<u8>(spurs->prefixSize, CELL_SPURS_NAME_MAX_LENGTH);
 	std::memcpy(&info->namePrefix, spurs->prefix, name_size);
 	info->namePrefix[name_size] = '\0';
 	info->namePrefixLength = name_size;
