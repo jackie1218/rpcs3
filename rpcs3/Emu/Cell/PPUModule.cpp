@@ -612,8 +612,19 @@ static void ppu_patch_refs(const ppu_module<lv2_obj>& _module, std::vector<ppu_r
 		be_t<u32> addend; // Note: Treating it as addend seems to be correct for now, but still unknown if theres more in this variable
 	};
 
+	// Hard cap on iterations: even an extremely large PRX would not legitimately have this many
+	// references chained together. Stops a malformed/malicious module from looping forever or
+	// walking far off the end of any segment.
+	constexpr usz max_ref_iterations = 0x100000;
+	usz iter_count = 0;
+
 	for (const ref_t* ref = &_module.get_ref<ref_t>(fref); ref->type; fref += sizeof(ref_t), ref = &_module.get_ref<ref_t>(fref))
 	{
+		if (++iter_count > max_ref_iterations)
+		{
+			fmt::throw_exception("ppu_patch_refs: reference chain exceeded iteration cap (%u) at fref=0x%x", max_ref_iterations, fref);
+		}
+
 		if (ref->addend) ppu_loader.warning("**** REF(%u): Addend value(0x%x, 0x%x)", ref->type, ref->addr, ref->addend);
 
 		const u32 raddr = ref->addr;
@@ -1733,7 +1744,11 @@ shared_ptr<lv2_prx> ppu_load_prx(const ppu_prx_object& elf, bool virtual_load, c
 				vm::bptr<void, u64> ptr;
 			};
 
-			for (uint i = 0; i + sizeof(ppu_prx_relocation_info) <= prog.p_filesz; i += sizeof(ppu_prx_relocation_info))
+			// Bound by both p_filesz and the actual buffer size; use usz so a >4 GiB p_filesz
+			// would not wrap a 32-bit counter and run off the buffer.
+			const usz reloc_limit = std::min<u64>(prog.p_filesz, prog.bin.size());
+
+			for (usz i = 0; i + sizeof(ppu_prx_relocation_info) <= reloc_limit; i += sizeof(ppu_prx_relocation_info))
 			{
 				const auto& rel = reinterpret_cast<const ppu_prx_relocation_info&>(prog.bin[i]);
 
