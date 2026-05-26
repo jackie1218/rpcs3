@@ -859,6 +859,13 @@ bool EDATADecrypter::ReadHeader()
 	//	return false;
 	//}
 
+	// Reject malformed EDAT headers before any divide-by-zero on block_size
+	if (edatHeader.block_size <= 0 || edatHeader.block_size > 0x40'0000)
+	{
+		edat_log.error("NPDRM EDAT header has invalid block_size 0x%x", edatHeader.block_size);
+		return false;
+	}
+
 	file_size = edatHeader.file_size;
 	total_blocks = ::narrow<u32>(utils::aligned_div(edatHeader.file_size, edatHeader.block_size));
 

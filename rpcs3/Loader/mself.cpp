@@ -49,7 +49,18 @@ bool extract_mself(const std::string& file, const std::string& extract_to)
 
 	for (const mself_record& rec : recs)
 	{
-		const std::string name = vfs::escape(rec.name);
+		// rec.name is a fixed-size char array with no guaranteed NUL terminator;
+		// strnlen-bound it before any conversion to string/string_view.
+		const std::string raw_name(rec.name, strnlen(rec.name, sizeof(rec.name)));
+
+		// Reject path traversal before forming the extraction path.
+		if (raw_name.find("..") != umax || raw_name.find('\\') != umax || (!raw_name.empty() && raw_name.front() == '/'))
+		{
+			mself_log.error("MSELF: refusing record with unsafe name '%s'", raw_name);
+			return false;
+		}
+
+		const std::string name = vfs::escape(raw_name, true);
 
 		const u64 pos = rec.get_pos(mself_size);
 
