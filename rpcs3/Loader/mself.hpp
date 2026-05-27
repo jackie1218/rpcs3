@@ -31,6 +31,10 @@ struct mself_header
 
 	u32 get_count(u64 file_size) const
 	{
+		// Reject undersized files outright so the subtraction below cannot underflow.
+		if (file_size < sizeof(mself_header)) [[unlikely]]
+			return 0;
+
 		// Fast sanity check
 		if (magic != "MSF"_u32 || ver != u32{1} || (file_size - sizeof(mself_header)) / sizeof(mself_record) < count || this->size != file_size) [[unlikely]]
 			return 0;

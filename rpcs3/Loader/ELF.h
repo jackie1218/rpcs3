@@ -344,12 +344,18 @@ public:
 
 		progs.clear();
 		progs.reserve(_phdrs.size());
+		const usz stream_size_for_elf = stream.size();
 		for (const auto& hdr : _phdrs)
 		{
 			static_cast<phdr_t&>(progs.emplace_back()) = hdr;
 
 			if (!(opts & elf_opt::no_data))
 			{
+				// Reject p_filesz values larger than the underlying stream — a malformed
+				// ELF could otherwise drive a multi-GiB allocation via std::vector::resize.
+				if (u64{hdr.p_filesz} > stream_size_for_elf)
+					return set_error(elf_error::stream_data);
+
 				seek_pos = offset + hdr.p_offset;
 				highest_offset = std::max<usz>(highest_offset, seek_pos);
 
