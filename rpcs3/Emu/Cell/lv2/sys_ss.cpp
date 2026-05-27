@@ -120,6 +120,11 @@ error_code sys_ss_random_number_generator(u64 pkg_id, vm::ptr<void> buf, u64 siz
 				return CELL_ENOSYS;
 			}
 
+			if (!buf || !vm::check_addr(buf.addr(), vm::page_writable, 0x18))
+			{
+				return CELL_EFAULT;
+			}
+
 			sys_ss.todo("sys_ss_random_number_generator(): pkg_id=1");
 			std::memset(buf.get_ptr(), 0, 0x18);
 			return CELL_OK;
@@ -132,6 +137,11 @@ error_code sys_ss_random_number_generator(u64 pkg_id, vm::ptr<void> buf, u64 siz
 	if (size > 0x10000000)
 	{
 		return SYS_SS_RNG_ERROR_ENOMEM;
+	}
+
+	if (!buf || !vm::check_addr(buf.addr(), vm::page_writable, size))
+	{
+		return CELL_EFAULT;
 	}
 
 	std::unique_ptr<u8[]> temp(new u8[size]);
@@ -176,12 +186,24 @@ error_code sys_ss_access_control_engine(u64 pkg_id, u64 a2, u64 a3)
 		}
 
 		ensure(a2 == static_cast<u64>(process_getpid()));
-		vm::write64(vm::cast(a3), authid);
+		{
+			const u32 a3_addr = vm::cast(a3);
+			if (!a3_addr || !vm::check_addr(a3_addr, vm::page_writable, 8))
+			{
+				return CELL_EFAULT;
+			}
+			vm::write64(a3_addr, authid);
+		}
 		break;
 	}
 	case 0x2:
 	{
-		vm::write64(vm::cast(a2), authid);
+		const u32 a2_addr = vm::cast(a2);
+		if (!a2_addr || !vm::check_addr(a2_addr, vm::page_writable, 8))
+		{
+			return CELL_EFAULT;
+		}
+		vm::write64(a2_addr, authid);
 		break;
 	}
 	case 0x3:
@@ -315,10 +337,19 @@ error_code sys_ss_secure_rtc(u64 cmd, u64 a2, u64 a3, u64 a4)
 		if (a2 > 1)
 			return 0x80010500; // bad packet id
 
+		const u32 a3_addr = ::narrow<u32>(a3);
+		const u32 a4_addr = ::narrow<u32>(a4);
+
+		if (!a3_addr || !vm::check_addr(a3_addr, vm::page_writable, 8) ||
+			!a4_addr || !vm::check_addr(a4_addr, vm::page_writable, 8))
+		{
+			return CELL_EFAULT;
+		}
+
 		// a3 is actual output, not 100% sure, but best guess is its tb val
-		vm::write64(::narrow<u32>(a3), get_timebased_time());
+		vm::write64(a3_addr, get_timebased_time());
 		// a4 is a pointer to status, non 0 on error
-		vm::write64(::narrow<u32>(a4), 0);
+		vm::write64(a4_addr, 0);
 		return CELL_OK;
 	}
 	else if (cmd == 0x3003)
@@ -473,6 +504,10 @@ error_code sys_ss_update_manager(u64 pkg_id, u64 a1, u64 a2, u64 a3, u64 a4, u64
 		if (!addr_ptr)
 			return CELL_EFAULT;
 
+		// Cap to a sane firmware-like upper bound and reject zero
+		if (size == 0 || size > 0x4000000)
+			return CELL_ENOMEM;
+
 		const auto addr = update_manager.allocate(size);
 
 		if (!addr)
@@ -519,6 +554,10 @@ error_code sys_ss_update_manager(u64 pkg_id, u64 a1, u64 a2, u64 a3, u64 a4, u64
 		if (!addr_ptr)
 			return CELL_EFAULT;
 
+		// Cap to a sane firmware-like upper bound and reject zero
+		if (size == 0 || size > 0x4000000)
+			return CELL_ENOMEM;
+
 		const auto addr = update_manager.allocate(size);
 
 		if (!addr)
@@ -560,11 +599,22 @@ error_code sys_ss_individual_info_manager(u64 pkg_id, u64 a2, vm::ptr<u64> out_s
 	case 0x17002:
 	{
 		// TODO
-		vm::write<u64>(static_cast<u32>(a5), a4); // Write back size of buffer
+		const u32 a5_addr = static_cast<u32>(a5);
+		if (!a5_addr || !vm::check_addr(a5_addr, vm::page_writable, 8))
+		{
+			return CELL_EFAULT;
+		}
+		vm::write<u64>(a5_addr, a4); // Write back size of buffer
 		break;
 	}
 	// Get EID size
-	case 0x17001: *out_size = 0x100; break;
+	case 0x17001:
+		if (!out_size)
+		{
+			return CELL_EFAULT;
+		}
+		*out_size = 0x100;
+		break;
 	default: break;
 	}
 

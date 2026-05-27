@@ -45,7 +45,14 @@ namespace rsxaudio_ringbuf_reader
 
 	static void set_timestamp(rsxaudio_shmem::ringbuf_t& ring_buf, u64 timestamp)
 	{
-		const s32 entry_idx_raw = (ring_buf.read_idx + ring_buf.rw_max_idx - (ring_buf.rw_max_idx > 2) - 1) % ring_buf.rw_max_idx;
+		// Snapshot guest-writable field; treat 0 as no-op to avoid divide-by-zero
+		const s32 rw_max_idx = ring_buf.rw_max_idx;
+		if (rw_max_idx <= 0)
+		{
+			return;
+		}
+
+		const s32 entry_idx_raw = (ring_buf.read_idx + rw_max_idx - (rw_max_idx > 2) - 1) % rw_max_idx;
 		const s32 entry_idx = std::clamp<s32>(entry_idx_raw, 0, SYS_RSXAUDIO_RINGBUF_SZ - 1);
 
 		ring_buf.entries[entry_idx].timestamp = convert_to_timebased_time(timestamp);
@@ -53,6 +60,14 @@ namespace rsxaudio_ringbuf_reader
 
 	static std::tuple<bool /*notify*/, u64 /*blk_idx*/, u64 /*timestamp*/> update_status(rsxaudio_shmem::ringbuf_t& ring_buf)
 	{
+		// Snapshot guest-writable fields; treat 0 as no-op to avoid divide-by-zero
+		const s32 rw_max_idx = ring_buf.rw_max_idx;
+		const s32 queue_notify_step = ring_buf.queue_notify_step;
+		if (rw_max_idx <= 0 || queue_notify_step <= 0)
+		{
+			return {};
+		}
+
 		const s32 read_idx = std::clamp<s32>(ring_buf.read_idx, 0, SYS_RSXAUDIO_RINGBUF_SZ - 1);
 
 		if ((ring_buf.entries[read_idx].valid & 1) == 0U)
@@ -60,14 +75,14 @@ namespace rsxaudio_ringbuf_reader
 			return {};
 		}
 
-		const s32 entry_idx_raw = (ring_buf.read_idx + ring_buf.rw_max_idx - (ring_buf.rw_max_idx > 2)) % ring_buf.rw_max_idx;
+		const s32 entry_idx_raw = (ring_buf.read_idx + rw_max_idx - (rw_max_idx > 2)) % rw_max_idx;
 		const s32 entry_idx = std::clamp<s32>(entry_idx_raw, 0, SYS_RSXAUDIO_RINGBUF_SZ - 1);
 
 		ring_buf.entries[read_idx].valid = 0;
-		ring_buf.queue_notify_idx = (ring_buf.queue_notify_idx + 1) % ring_buf.queue_notify_step;
-		ring_buf.read_idx         = (ring_buf.read_idx + 1) % ring_buf.rw_max_idx;
+		ring_buf.queue_notify_idx = (ring_buf.queue_notify_idx + 1) % queue_notify_step;
+		ring_buf.read_idx         = (ring_buf.read_idx + 1) % rw_max_idx;
 
-		return std::make_tuple(((ring_buf.rw_max_idx > 2) ^ ring_buf.queue_notify_idx) == 0, ring_buf.entries[entry_idx].audio_blk_idx, ring_buf.entries[entry_idx].timestamp);
+		return std::make_tuple(((rw_max_idx > 2) ^ ring_buf.queue_notify_idx) == 0, ring_buf.entries[entry_idx].audio_blk_idx, ring_buf.entries[entry_idx].timestamp);
 	}
 
 	static std::pair<bool /*entry_valid*/, u32 /*addr*/> get_addr(const rsxaudio_shmem::ringbuf_t& ring_buf)
@@ -113,6 +128,15 @@ lv2_rsxaudio::lv2_rsxaudio(utils::serial& ar) noexcept
 	if (init)
 	{
 		ar(shmem);
+
+		// Validate guest-supplied shmem address from savestate to avoid OOB access
+		if (!shmem || !vm::check_addr(shmem, vm::page_readable | vm::page_writable, sizeof(rsxaudio_shmem)))
+		{
+			sys_rsxaudio.error("lv2_rsxaudio savestate: invalid shmem address 0x%x, resetting init", u32{shmem});
+			shmem = vm::addr_t{};
+			init = false;
+			return;
+		}
 
 		for (auto& port : event_queue)
 		{
