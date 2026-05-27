@@ -221,6 +221,12 @@ bool evdev_joystick_handler::update_device(const std::shared_ptr<PadDevice>& dev
 	if (ret < 0)
 	{
 		evdev_log.error("Failed to initialize libevdev for joystick: %s [errno %d]", strerror(-ret), -ret);
+		if (dev)
+		{
+			libevdev_free(dev);
+			dev = nullptr;
+		}
+		close(fd);
 		return false;
 	}
 
