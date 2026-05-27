@@ -2462,6 +2462,10 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 		perf_meter<"DMA_PUT"_u64> perf2 = perf_;
 
+		// Snapshot original dst/src for the mfc_debug dump below, since some switch arms advance them past the end of the transfer.
+		u8* const dump_dst_orig = dst;
+		const u8* const dump_src_orig = src;
+
 		switch (u32 size = args.size)
 		{
 		case 1:
@@ -2653,13 +2657,20 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 			dump.cmd = args;
 			dump.cmd.eah = _this->pc;
 			dump.block_hash = _this->block_hash;
-			std::memcpy(dump.data, is_get ? dst : src, std::min<u32>(args.size, 128));
+			std::memcpy(dump.data, is_get ? dump_dst_orig : dump_src_orig, std::min<u32>(args.size, 128));
 		}
 
 		return;
 	}
 
 plain_access:
+
+	// Snapshot original dst/src for the mfc_debug dump below, since the default switch arm advances them past the end of the transfer.
+	// Declared inside a block so a goto to plain_access does not jump over the initialization.
+	u8* dump_dst_orig2;
+	const u8* dump_src_orig2;
+	dump_dst_orig2 = dst;
+	dump_src_orig2 = src;
 
 	switch (u32 size = args.size)
 	{
@@ -2730,7 +2741,7 @@ plain_access:
 		dump.cmd = args;
 		dump.cmd.eah = _this->pc;
 		dump.block_hash = _this->block_hash;
-		std::memcpy(dump.data, is_get ? dst : src, std::min<u32>(args.size, 128));
+		std::memcpy(dump.data, is_get ? dump_dst_orig2 : dump_src_orig2, std::min<u32>(args.size, 128));
 	}
 }
 
