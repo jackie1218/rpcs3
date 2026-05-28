@@ -232,8 +232,12 @@ void raw_mouse::update_values(const RAWMOUSE& state)
 			// Adjust mouse position if the window size changed
 			if (m_window_width_old != m_window_width || m_window_height_old != m_window_height)
 			{
-				m_pos_x = static_cast<int>(std::round((m_pos_x / static_cast<f32>(m_window_width_old)) * m_window_width));
-				m_pos_y = static_cast<int>(std::round((m_pos_y / static_cast<f32>(m_window_height_old)) * m_window_height));
+				// On the first frame the old dimensions are 0, so skip the rescale to avoid division by zero
+				if (m_window_width_old != 0 && m_window_height_old != 0)
+				{
+					m_pos_x = static_cast<int>(std::round((m_pos_x / static_cast<f32>(m_window_width_old)) * m_window_width));
+					m_pos_y = static_cast<int>(std::round((m_pos_y / static_cast<f32>(m_window_height_old)) * m_window_height));
+				}
 
 				m_window_width_old = m_window_width;
 				m_window_height_old = m_window_height;
@@ -316,8 +320,8 @@ void raw_mouse_handler::Init(const u32 max_connect)
 		m_info.status[i] = connected_mice.contains(i) ? CELL_MOUSE_STATUS_CONNECTED : CELL_MOUSE_STATUS_DISCONNECTED;
 		m_info.mode[i] = CELL_MOUSE_INFO_TABLET_MOUSE_MODE;
 		m_info.tablet_is_supported[i] = CELL_MOUSE_INFO_TABLET_NOT_SUPPORTED;
-		m_info.vendor_id[0] = 0x1234;
-		m_info.product_id[0] = 0x1234;
+		m_info.vendor_id[i] = 0x1234;
+		m_info.product_id[i] = 0x1234;
 	}
 
 	type = mouse_handler::raw;

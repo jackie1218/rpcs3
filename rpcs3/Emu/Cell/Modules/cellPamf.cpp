@@ -600,9 +600,10 @@ error_code pamfVerify(vm::cptr<PamfHeader> pAddr, u64 fileSize, vm::ptr<CellPamf
 		next_ep_table_addr += ep_num * sizeof(PamfEpHeader);
 	}
 
-	// This can overflow on LLE, the +4 is necessary on both sides and the left operand needs to be u32
-	if (group_size + 4 > grouping_period_size - offsetof(PamfGroupingPeriod, groups) + sizeof(u32)
-		|| grouping_period_size + 4 > seq_info_size - offsetof(PamfSequenceInfo, grouping_periods) + sizeof(u32))
+	// This can overflow on LLE, the +4 is necessary on both sides and the left operand needs to be u32.
+	// Reordered to additive form to avoid unsigned wrap when sizes are smaller than the constant offsets.
+	if (group_size + 4 + offsetof(PamfGroupingPeriod, groups) > grouping_period_size + sizeof(u32)
+		|| grouping_period_size + 4 + offsetof(PamfSequenceInfo, grouping_periods) > seq_info_size + sizeof(u32))
 	{
 		return { CELL_PAMF_ERROR_INVALID_PAMF, "pamfVerify() failed: size mismatch" };
 	}
@@ -647,6 +648,12 @@ error_code pamfVerify(vm::cptr<PamfHeader> pAddr, u64 fileSize, vm::ptr<CellPamf
 	}
 	else if (psmf_marks_offset != 0 && !(attribute & CELL_PAMF_ATTRIBUTE_MINIMUM_HEADER))
 	{
+		// The marks header reads a u32 at +0 and a u16 at +6, so it requires at least 8 bytes.
+		if (psmf_marks_size < 8)
+		{
+			return { CELL_PAMF_ERROR_INVALID_PAMF, "pamfVerify() failed: psmf_marks_size too small" };
+		}
+
 		const u32 size = vm::read32(pAddr.addr() + psmf_marks_offset);
 
 		if (size + sizeof(u32) != psmf_marks_size)

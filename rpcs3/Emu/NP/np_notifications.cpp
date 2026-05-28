@@ -253,7 +253,8 @@ namespace np
 	{
 		auto matching_info = noti.get_protobuf<np2_structs::MatchingSignalingInfo>();
 
-		if (noti.is_error() || !matching_info->has_addr() || matching_info->npid().empty() || matching_info->addr().ip().empty())
+		if (noti.is_error() || !matching_info->has_addr() || matching_info->npid().empty() || matching_info->addr().ip().empty() ||
+			(matching_info->addr().ip().size() != 4 && matching_info->addr().ip().size() != 16))
 		{
 			rpcn_log.error("Received faulty SignalingHelper notification");
 			return;
@@ -299,15 +300,21 @@ namespace np
 		switch (notification_type)
 		{
 		case SCE_NP_MATCHING_EVENT_ROOM_UPDATE_NEW_MEMBER:
+			if (!room_status->members)
+				break;
 			gui_cache.add_member(room_status->id, room_status->members.get_ptr(), true);
 			break;
 		case SCE_NP_MATCHING_EVENT_ROOM_UPDATE_MEMBER_LEAVE:
+			if (!room_status->members)
+				break;
 			gui_cache.del_member(room_status->id, room_status->members.get_ptr());
 			break;
 		case SCE_NP_MATCHING_EVENT_ROOM_DISAPPEARED:
 			gui_cache.del_room(room_status->id);
 			break;
 		case SCE_NP_MATCHING_EVENT_ROOM_UPDATE_OWNER_CHANGE:
+			if (!room_status->members || !room_status->members->next)
+				break;
 			gui_cache.add_member(room_status->id, room_status->members.get_ptr(), false);
 			gui_cache.add_member(room_status->id, room_status->members->next.get_ptr(), false);
 			break;

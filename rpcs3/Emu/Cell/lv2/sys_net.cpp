@@ -281,7 +281,11 @@ std::function<void(void*)> lv2_socket::load(utils::serial& ar)
 	case SYS_NET_SOCK_RAW: sock_lv2 = make_shared<lv2_socket_raw>(ar, type); break;
 	case SYS_NET_SOCK_DGRAM_P2P: sock_lv2 = make_shared<lv2_socket_p2p>(ar, type); break;
 	case SYS_NET_SOCK_STREAM_P2P: sock_lv2 = make_shared<lv2_socket_p2ps>(ar, type); break;
+	default:
+		fmt::throw_exception("lv2_socket::load: unknown lv2_socket_type 0x%x in savestate", static_cast<s32>(type));
 	}
+
+	ensure(sock_lv2);
 
 	if (std::memcmp(&sock_lv2->last_bound_addr, std::array<u8, 16>{}.data(), 16))
 	{
@@ -1114,6 +1118,23 @@ error_code sys_net_bnet_setsockopt(ppu_thread& ppu, s32 s, s32 level, s32 optnam
 		break;
 	}
 
+	if (optlen < sizeof(s32))
+	{
+		return -SYS_NET_EINVAL;
+	}
+
+	// The largest legitimate socket option (e.g. sys_net_ip_mreq, sys_net_linger) is well under 256 bytes;
+	// reject larger inputs so a guest cannot drive multi-GB allocations via this syscall.
+	if (optlen > 256)
+	{
+		return -SYS_NET_EINVAL;
+	}
+
+	if (!optval || !vm::check_addr(optval.addr(), vm::page_readable, optlen))
+	{
+		return -SYS_NET_EFAULT;
+	}
+
 	switch (optlen)
 	{
 	case 1:
@@ -1128,18 +1149,6 @@ error_code sys_net_bnet_setsockopt(ppu_thread& ppu, s32 s, s32 level, s32 optnam
 	case 8:
 		sys_net.warning("optval: 0x%016X", *static_cast<const be_t<u64>*>(optval.get_ptr()));
 		break;
-	}
-
-	if (optlen < sizeof(s32))
-	{
-		return -SYS_NET_EINVAL;
-	}
-
-	// The largest legitimate socket option (e.g. sys_net_ip_mreq, sys_net_linger) is well under 256 bytes;
-	// reject larger inputs so a guest cannot drive multi-GB allocations via this syscall.
-	if (optlen > 256)
-	{
-		return -SYS_NET_EINVAL;
 	}
 
 	std::vector<u8> optval_copy(vm::_ptr<u8>(optval.addr()), vm::_ptr<u8>(optval.addr() + optlen));
@@ -1280,6 +1289,18 @@ error_code sys_net_bnet_poll(ppu_thread& ppu, vm::ptr<sys_net_pollfd> fds, s32 n
 	if (nfds <= 0)
 	{
 		return not_an_error(0);
+	}
+
+	// Cap nfds to a sane limit (FD_SETSIZE on most systems is 1024)
+	constexpr s32 sys_net_poll_nfds_max = 1024;
+	if (nfds > sys_net_poll_nfds_max)
+	{
+		return -SYS_NET_EINVAL;
+	}
+
+	if (!fds || !vm::check_addr(fds.addr(), vm::page_readable, nfds * sizeof(sys_net_pollfd)))
+	{
+		return -SYS_NET_EFAULT;
 	}
 
 	atomic_t<s32> signaled{0};
@@ -1861,6 +1882,11 @@ error_code sys_net_infoctl(ppu_thread& ppu, s32 cmd, vm::ptr<void> arg)
 	{
 	case 9:
 	{
+		if (!arg || !vm::check_addr(arg.addr(), vm::page_writable, sizeof(net_infoctl_cmd_9_t)))
+		{
+			return -SYS_NET_EFAULT;
+		}
+
 		constexpr auto nameserver = "nameserver \0"sv;
 
 		char buffer[nameserver.size() + 80]{};
@@ -1871,8 +1897,16 @@ error_code sys_net_infoctl(ppu_thread& ppu, s32 cmd, vm::ptr<void> arg)
 		std::memcpy(buffer + nameserver.size() - 1, dns_str.data(), dns_str.size());
 
 		std::string_view name{buffer};
-		vm::static_ptr_cast<net_infoctl_cmd_9_t>(arg)->zero = 0;
-		std::memcpy(vm::static_ptr_cast<net_infoctl_cmd_9_t>(arg)->server_name.get_ptr(), name.data(), name.size());
+		auto cmd_arg = vm::static_ptr_cast<net_infoctl_cmd_9_t>(arg);
+		cmd_arg->zero = 0;
+
+		const auto server_name = cmd_arg->server_name;
+		if (!server_name || !vm::check_addr(server_name.addr(), vm::page_writable, name.size()))
+		{
+			return -SYS_NET_EFAULT;
+		}
+
+		std::memcpy(server_name.get_ptr(), name.data(), name.size());
 		break;
 	}
 	default: break;

@@ -3045,7 +3045,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 						if (+iflags & +spu_iflag::use_rc)
 						{
-							is_no_return = is_no_return || (op_next.ra >= 4 && op_next.rb < 10);
+							is_no_return = is_no_return || (op_next.rc >= 4 && op_next.rc < 10);
 						}
 					}
 				}
@@ -4464,7 +4464,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 		for (u32 ia = addr; ia < addr + bb.size * 4; ia += 4)
 		{
 			// Decode instruction again
-			op.opcode = std::bit_cast<be_t<u32>>(result.data[(ia - lsa) / 41]);
+			op.opcode = std::bit_cast<be_t<u32>>(result.data[(ia - lsa) / 4]);
 			last_inst = g_spu_itype.decode(op.opcode);
 
 			// Propagate some constants

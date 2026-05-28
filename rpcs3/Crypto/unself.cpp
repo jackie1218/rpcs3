@@ -8,49 +8,49 @@
 
 inline u8 Read8(const fs::file& f)
 {
-	u8 ret;
+	u8 ret{};
 	f.read(&ret, sizeof(ret));
 	return ret;
 }
 
 inline u16 Read16(const fs::file& f)
 {
-	be_t<u16> ret;
+	be_t<u16> ret{};
 	f.read(&ret, sizeof(ret));
 	return ret;
 }
 
 inline u32 Read32(const fs::file& f)
 {
-	be_t<u32> ret;
+	be_t<u32> ret{};
 	f.read(&ret, sizeof(ret));
 	return ret;
 }
 
 inline u64 Read64(const fs::file& f)
 {
-	be_t<u64> ret;
+	be_t<u64> ret{};
 	f.read(&ret, sizeof(ret));
 	return ret;
 }
 
 inline u16 Read16LE(const fs::file& f)
 {
-	u16 ret;
+	u16 ret{};
 	f.read(&ret, sizeof(ret));
 	return ret;
 }
 
 inline u32 Read32LE(const fs::file& f)
 {
-	u32 ret;
+	u32 ret{};
 	f.read(&ret, sizeof(ret));
 	return ret;
 }
 
 inline u64 Read64LE(const fs::file& f)
 {
-	u64 ret;
+	u64 ret{};
 	f.read(&ret, sizeof(ret));
 	return ret;
 }
@@ -323,7 +323,7 @@ void supplemental_header::Show() const
 		self_log.notice("Version: 0x%08x", PS3_npdrm_header.npd.version);
 		self_log.notice("License: 0x%08x", PS3_npdrm_header.npd.license);
 		self_log.notice("Type: 0x%08x", PS3_npdrm_header.npd.type);
-		self_log.notice("ContentID: %s", PS3_npdrm_header.npd.content_id);
+		self_log.notice("ContentID: %s", std::string(PS3_npdrm_header.npd.content_id, strnlen(PS3_npdrm_header.npd.content_id, sizeof(PS3_npdrm_header.npd.content_id))));
 		self_log.notice("Digest: %s", PS3_npdrm_header.npd.digest);
 		self_log.notice("Inverse digest: %s", PS3_npdrm_header.npd.title_hash);
 		self_log.notice("XOR digest: %s", PS3_npdrm_header.npd.dev_hash);
@@ -632,6 +632,13 @@ bool SCEDecrypter::LoadMetadata(const u8 erk[32], const u8 riv[16])
 		return false;
 	}
 	const auto metadata_headers_size = sce_hdr.se_hsize - (sizeof(sce_hdr) + sce_hdr.se_meta + sizeof(meta_info));
+	// Cap metadata headers size to avoid a guest-controlled gigantic allocation. 64 MiB is way more
+	// than any real SCE metadata block and also no larger than the file itself.
+	if (metadata_headers_size > sce_f.size() || metadata_headers_size > (64u << 20))
+	{
+		self_log.error("SCE metadata_headers_size 0x%llx is implausible (file size 0x%llx)", metadata_headers_size, sce_f.size());
+		return false;
+	}
 	const auto metadata_headers = std::make_unique<u8[]>(metadata_headers_size);
 
 	// Locate and read the encrypted metadata info.
@@ -705,11 +712,26 @@ bool SCEDecrypter::DecryptData()
 {
 	aes_context aes;
 
-	// Calculate the total data size.
+	// Calculate the total data size with overflow protection.
+	u64 total_size = 0;
 	for (unsigned int i = 0; i < meta_hdr.section_count; i++)
 	{
-		data_buf_length += ::narrow<u32>(meta_shdr[i].data_size);
+		// Reject any single section that is implausibly large.
+		if (meta_shdr[i].data_size > sce_f.size())
+		{
+			self_log.error("SCE section %u has out-of-bounds data_size 0x%llx (file size 0x%llx)", i, +meta_shdr[i].data_size, sce_f.size());
+			return false;
+		}
+
+		total_size += meta_shdr[i].data_size;
+		if (total_size > UINT32_MAX)
+		{
+			self_log.error("SCE total decrypted data size exceeds 4 GiB (overflow at section %u)", i);
+			return false;
+		}
 	}
+
+	data_buf_length = ::narrow<u32>(total_size);
 
 	// Allocate a buffer to store decrypted data.
 	data_buf = std::make_unique<u8[]>(data_buf_length);
@@ -834,11 +856,24 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 		return false;
 	}
 
+	// Helper: verify that [offset, offset + len) lies within the file before seeking.
+	auto seek_checked = [&](u64 offset, u64 len) -> bool
+	{
+		if (offset > self_size || utils::add_saturate<u64>(offset, len) > self_size)
+		{
+			self_log.error("SELF header references out-of-bounds region (offset=0x%llx, len=0x%llx, file=0x%llx)", offset, len, self_size);
+			return false;
+		}
+		self_f.seek(offset);
+		return true;
+	};
+
 	// Read SELF header.
 	m_ext_hdr.Load(self_f);
 
 	// Read the APP INFO.
-	self_f.seek(m_ext_hdr.program_identification_hdr_offset);
+	if (!seek_checked(m_ext_hdr.program_identification_hdr_offset, sizeof(program_identification_header)))
+		return false;
 	m_prog_id_hdr.Load(self_f);
 
 	if (out_info)
@@ -847,7 +882,8 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 	}
 
 	// Read ELF header.
-	self_f.seek(m_ext_hdr.ehdr_offset);
+	if (!seek_checked(m_ext_hdr.ehdr_offset, isElf32 ? sizeof(Elf32_Ehdr) : sizeof(Elf64_Ehdr)))
+		return false;
 
 	if (isElf32)
 		elf32_hdr.Load(self_f);
@@ -863,7 +899,8 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 			self_log.error("ELF program header offset is null!");
 			return false;
 		}
-		self_f.seek(m_ext_hdr.phdr_offset);
+		if (!seek_checked(m_ext_hdr.phdr_offset, u64{elf32_hdr.e_phnum} * sizeof(Elf32_Phdr)))
+			return false;
 		for(u32 i = 0; i < elf32_hdr.e_phnum; ++i)
 		{
 			phdr32_arr.emplace_back();
@@ -880,7 +917,8 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 			return false;
 		}
 
-		self_f.seek(m_ext_hdr.phdr_offset);
+		if (!seek_checked(m_ext_hdr.phdr_offset, u64{elf64_hdr.e_phnum} * sizeof(Elf64_Phdr)))
+			return false;
 
 		for (u32 i = 0; i < elf64_hdr.e_phnum; ++i)
 		{
@@ -891,7 +929,8 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 
 	// Read section info.
 	m_seg_ext_hdr.clear();
-	self_f.seek(m_ext_hdr.segment_ext_hdr_offset);
+	if (!seek_checked(m_ext_hdr.segment_ext_hdr_offset, 0))
+		return false;
 
 	for(u32 i = 0; i < (isElf32 ? elf32_hdr.e_phnum : elf64_hdr.e_phnum); ++i)
 	{
@@ -925,10 +964,20 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 
 	// Read control info.
 	m_supplemental_hdr_arr.clear();
-	self_f.seek(m_ext_hdr.supplemental_hdr_offset);
+	if (!seek_checked(m_ext_hdr.supplemental_hdr_offset, 0))
+		return false;
 
+	// Cap iteration count to keep malformed files from looping forever.
+	constexpr u64 kMaxSupplementalHeaders = 1024;
+	u64 supplemental_iters = 0;
 	for (u64 i = 0; i < m_ext_hdr.supplemental_hdr_size;)
 	{
+		if (++supplemental_iters > kMaxSupplementalHeaders)
+		{
+			self_log.error("SELF supplemental header iteration cap exceeded");
+			return false;
+		}
+
 		if (self_f.pos() >= self_size)
 		{
 			// Read out of bounds (file is truncated or corrupted)
@@ -938,6 +987,15 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 		m_supplemental_hdr_arr.emplace_back();
 		supplemental_header& cinfo = m_supplemental_hdr_arr.back();
 		cinfo.Load(self_f);
+
+		// Reject zero/under-sized advances to prevent infinite looping.
+		// 16 bytes is the size of the fixed header (type + size + next) and the absolute
+		// minimum any real supplemental header can occupy.
+		if (cinfo.size < 16u)
+		{
+			self_log.error("SELF supplemental header has invalid size 0x%x", cinfo.size);
+			return false;
+		}
 		i += cinfo.size;
 	}
 
@@ -957,7 +1015,8 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 			return true;
 		}
 
-		self_f.seek(m_ext_hdr.shdr_offset);
+		if (!seek_checked(m_ext_hdr.shdr_offset, u64{elf32_hdr.e_shnum} * sizeof(Elf32_Shdr)))
+			return false;
 
 		for(u32 i = 0; i < elf32_hdr.e_shnum; ++i)
 		{
@@ -974,7 +1033,8 @@ bool SELFDecrypter::LoadHeaders(bool isElf32, SelfAdditionalInfo* out_info)
 			return true;
 		}
 
-		self_f.seek(m_ext_hdr.shdr_offset);
+		if (!seek_checked(m_ext_hdr.shdr_offset, u64{elf64_hdr.e_shnum} * sizeof(Elf64_Shdr)))
+			return false;
 
 		for(u32 i = 0; i < elf64_hdr.e_shnum; ++i)
 		{
@@ -1117,6 +1177,13 @@ bool SELFDecrypter::LoadMetadata(const u8* klic_key)
 		return false;
 	}
 	const auto metadata_headers_size = sce_hdr.se_hsize - (sizeof(sce_hdr) + sce_hdr.se_meta + sizeof(meta_info));
+	// Cap metadata headers size to avoid a guest-controlled gigantic allocation. 64 MiB is way more
+	// than any real SELF metadata block and also no larger than the file itself.
+	if (metadata_headers_size > self_f.size() || metadata_headers_size > (64u << 20))
+	{
+		self_log.error("SELF metadata_headers_size 0x%llx is implausible (file size 0x%llx)", metadata_headers_size, self_f.size());
+		return false;
+	}
 	const auto metadata_headers = std::make_unique<u8[]>(metadata_headers_size);
 
 	// Locate and read the encrypted metadata info.
@@ -1201,15 +1268,32 @@ bool SELFDecrypter::DecryptData()
 {
 	aes_context aes;
 
-	// Calculate the total data size.
+	// Calculate the total data size with overflow protection.
+	u64 total_size = 0;
 	for (unsigned int i = 0; i < meta_hdr.section_count; i++)
 	{
 		if (meta_shdr[i].encrypted == 3)
 		{
 			if ((meta_shdr[i].key_idx < meta_hdr.key_count) && (meta_shdr[i].iv_idx < meta_hdr.key_count))
-				data_buf_length += ::narrow<u32>(meta_shdr[i].data_size);
+			{
+				// Reject any single section that is implausibly large.
+				if (meta_shdr[i].data_size > self_f.size())
+				{
+					self_log.error("SELF section %u has out-of-bounds data_size 0x%llx (file size 0x%llx)", i, +meta_shdr[i].data_size, self_f.size());
+					return false;
+				}
+
+				total_size += meta_shdr[i].data_size;
+				if (total_size > UINT32_MAX)
+				{
+					self_log.error("SELF total decrypted data size exceeds 4 GiB (overflow at section %u)", i);
+					return false;
+				}
+			}
 		}
 	}
+
+	data_buf_length = ::narrow<u32>(total_size);
 
 	// Allocate a buffer to store decrypted data.
 	data_buf = std::make_unique<u8[]>(data_buf_length);
@@ -1285,7 +1369,9 @@ bool SELFDecrypter::GetKeyFromRap(const char* content_id, u8* npdrm_key)
 	memset(rap_key, 0, 0x10);
 
 	// Try to find a matching RAP file under exdata folder.
-	const std::string ci_str = content_id;
+	// NPD_HEADER::content_id is a fixed-size char[0x30] that may not be null-terminated;
+	// bound the string to the field size to avoid reading past the buffer.
+	const std::string ci_str(content_id, strnlen(content_id, 0x30));
 	const std::string rap_path = rpcs3::utils::get_rap_file_path(ci_str);
 
 	// Open the RAP file and read the key.

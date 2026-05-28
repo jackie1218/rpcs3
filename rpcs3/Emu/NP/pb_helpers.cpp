@@ -517,7 +517,7 @@ namespace np
 		switch (sce_mi->castType)
 		{
 		case SCE_NP_MATCHING2_CASTTYPE_BROADCAST: break;
-		case SCE_NP_MATCHING2_CASTTYPE_UNICAST: sce_mi->dst->unicastTarget = mi.dst(0).value(); break;
+		case SCE_NP_MATCHING2_CASTTYPE_UNICAST: if (mi.dst_size() > 0) sce_mi->dst->unicastTarget = mi.dst(0).value(); break;
 		case SCE_NP_MATCHING2_CASTTYPE_MULTICAST:
 		{
 			sce_mi->dst->multicastTarget.memberIdNum = mi.dst_size();
@@ -528,7 +528,7 @@ namespace np
 			}
 			break;
 		}
-		case SCE_NP_MATCHING2_CASTTYPE_MULTICAST_TEAM: sce_mi->dst->multicastTargetTeamId = ::narrow<SceNpMatching2TeamId>(mi.dst(0).value()); break;
+		case SCE_NP_MATCHING2_CASTTYPE_MULTICAST_TEAM: if (mi.dst_size() > 0) sce_mi->dst->multicastTargetTeamId = ::narrow<SceNpMatching2TeamId>(mi.dst(0).value()); break;
 		default: ensure(false);
 		}
 

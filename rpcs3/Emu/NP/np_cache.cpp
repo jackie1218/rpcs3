@@ -109,7 +109,7 @@ namespace np
 			return false;
 		}
 
-		rooms.erase(member_id);
+		rooms[room_id].members.erase(member_id);
 		return true;
 	}
 

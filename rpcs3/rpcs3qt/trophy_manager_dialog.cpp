@@ -496,12 +496,20 @@ bool trophy_manager_dialog::LoadTrophyFolderToDB(const std::string& trop_name)
 		return false;
 	}
 
-	const u32 trophy_count = game_trophy_data->trop_usr->GetTrophiesCount();
+	u32 trophy_count = game_trophy_data->trop_usr->GetTrophiesCount();
 
 	if (trophy_count == 0)
 	{
 		gui_log.error("Warning game %s in trophy folder %s usr file reports zero trophies. Cannot load in trophy manager.", game_trophy_data->game_name, game_trophy_data->path);
 		return false;
+	}
+
+	// Sanity bound: real PSN games have far fewer than this, but clamp to avoid runaway allocations from a malformed TROPUSR.DAT
+	constexpr u32 max_trophy_count = 1024;
+	if (trophy_count > max_trophy_count)
+	{
+		gui_log.warning("Trophy count %u for game %s exceeds sane maximum of %u, clamping", trophy_count, game_trophy_data->game_name, max_trophy_count);
+		trophy_count = max_trophy_count;
 	}
 
 	for (u32 trophy_id = 0; trophy_id < trophy_count; ++trophy_id)
@@ -1250,17 +1258,19 @@ void trophy_manager_dialog::PopulateTrophyTable()
 		// Get trophy type
 		QString trophy_type;
 
-		switch (n->GetAttribute("ttype")[0])
+		const std::string ttype_attr = n->GetAttribute("ttype");
+		switch (ttype_attr.empty() ? '\0' : ttype_attr[0])
 		{
 		case 'B': details.trophyGrade = SCE_NP_TROPHY_GRADE_BRONZE;   trophy_type = tr("Bronze", "Trophy type");   break;
 		case 'S': details.trophyGrade = SCE_NP_TROPHY_GRADE_SILVER;   trophy_type = tr("Silver", "Trophy type");   break;
 		case 'G': details.trophyGrade = SCE_NP_TROPHY_GRADE_GOLD;     trophy_type = tr("Gold", "Trophy type");     break;
 		case 'P': details.trophyGrade = SCE_NP_TROPHY_GRADE_PLATINUM; trophy_type = tr("Platinum", "Trophy type"); break;
-		default: gui_log.warning("Unknown trophy grade %s", n->GetAttribute("ttype")); break;
+		default: gui_log.warning("Unknown trophy grade %s", ttype_attr); break;
 		}
 
 		// Get hidden state
-		const bool hidden = n->GetAttribute("hidden")[0] == 'y';
+		const std::string hidden_attr = n->GetAttribute("hidden");
+		const bool hidden = hidden_attr == "yes";
 		details.hidden = hidden;
 
 		// Get name and detail

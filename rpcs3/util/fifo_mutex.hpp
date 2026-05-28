@@ -34,7 +34,7 @@ public:
 
 		if (val >> 16 == (val & 0xffff))
 		{
-			if (m_value.compare_and_swap(val, ((val + 1) & 0xffff) | (val & 0xffff0000)))
+			if (m_value.compare_and_swap_test(val, ((val + 1) & 0xffff) | (val & 0xffff0000)))
 			{
 				return true;
 			}

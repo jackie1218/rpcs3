@@ -146,7 +146,15 @@ void pngDecRowCallback(png_structp png_ptr, png_bytep new_row, png_uint_32 row_n
 	if (pass > 0)
 		data = static_cast<u8*>(stream->cbDispParam->nextOutputImage.get_ptr());
 	else
+	{
+		// Guard against guest-provided outputStartY exceeding row_num which would
+		// underflow the unsigned subtraction and produce an OOB write.
+		if (row_num < stream->cbDispInfo->outputStartY)
+		{
+			return;
+		}
 		data = static_cast<u8*>(stream->cbDispParam->nextOutputImage.get_ptr()) + ((row_num - stream->cbDispInfo->outputStartY) * stream->cbDispInfo->outputFrameWidthByte);
+	}
 
 	png_progressive_combine_row(png_ptr, data, new_row);
 }
@@ -466,6 +474,13 @@ error_code pngDecOpen(ppu_thread& ppu, PHandle handle, PPStream png_stream, PSrc
 	}
 	else
 	{
+		// Reject obviously bogus stream sizes: PNG header is 8 bytes, and we cap
+		// the in-memory stream to 256 MiB to prevent unbounded guest-driven reads.
+		if (stream->source.streamSize < 8 || stream->source.streamSize > 0x10000000)
+		{
+			return CELL_PNGDEC_ERROR_STREAM_FORMAT;
+		}
+
 		// We can simply copy the first 8 bytes
 		memcpy(header, stream->source.streamPtr.get_ptr(), 8);
 	}
@@ -501,6 +516,7 @@ error_code pngDecOpen(ppu_thread& ppu, PHandle handle, PPStream png_stream, PSrc
 
 	if (source->srcSelect == CELL_PNGDEC_BUFFER)
 	{
+		// streamSize was already bounds-checked above when reading the header
 		buffer->length = stream->source.streamSize;
 		buffer->data = stream->source.streamPtr;
 		buffer->cursor = 8;
@@ -713,6 +729,16 @@ error_code pngDecodeData(ppu_thread& ppu, PHandle handle, PStream stream, vm::pt
 		fmt::throw_exception("Bytes per line less than expected output! Got: %d, expected: %d", bytes_per_line, stream->out_param.outputWidthByte);
 	}
 
+	// Reject absurd line strides from the guest. Cap at outputWidthByte plus a
+	// reasonable padding allowance, and reject combinations that would overflow.
+	const u32 output_width_byte = stream->out_param.outputWidthByte;
+	const u32 output_height = stream->out_param.outputHeight;
+	if (bytes_per_line > output_width_byte + 0x1000u
+		|| (output_height != 0 && bytes_per_line > std::numeric_limits<u32>::max() / output_height))
+	{
+		return CELL_PNGDEC_ERROR_ARG;
+	}
+
 	// partial decoding
 	if (cb_control_disp && stream->outputCounts > 0)
 	{
@@ -760,9 +786,34 @@ error_code pngDecodeData(ppu_thread& ppu, PHandle handle, PStream stream, vm::pt
 
 		// todo: commandPtr
 		// then just loop until the end, the callbacks should take care of the rest
+		// Cap iteration count and per-chunk size so a misbehaving guest callback can't
+		// keep us looping forever or feed unbounded buffers into libpng.
+		constexpr u32 kMaxStrmSize = 0x10000000; // 256 MiB per chunk
+		constexpr u32 kMaxIterations = 0x100000;
+		u32 iterations = 0;
 		while (stream->endOfFile != true)
 		{
+			if (++iterations > kMaxIterations)
+			{
+				freeMem();
+				return CELL_PNGDEC_ERROR_STREAM_FORMAT;
+			}
+
 			stream->cbCtrlStream.cbCtrlStrmFunc(ppu, streamInfo, streamParam, stream->cbCtrlStream.cbCtrlStrmArg);
+
+			if (streamParam->strmSize > kMaxStrmSize)
+			{
+				freeMem();
+				return CELL_PNGDEC_ERROR_STREAM_FORMAT;
+			}
+
+			// Detect accumulator overflow before updating decodedStrmSize
+			if (streamInfo->decodedStrmSize + streamParam->strmSize < streamInfo->decodedStrmSize)
+			{
+				freeMem();
+				return CELL_PNGDEC_ERROR_STREAM_FORMAT;
+			}
+
 			streamInfo->decodedStrmSize += streamParam->strmSize;
 			png_process_data(stream->png_ptr, stream->info_ptr, static_cast<u8*>(streamParam->strmPtr.get_ptr()), streamParam->strmSize);
 		}
