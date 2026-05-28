@@ -202,8 +202,6 @@ namespace gl
 		};
 
 	protected:
-		mutable GLuint64 m_handle64 = GL_NONE;
-
 		GLuint m_width = 0;
 		GLuint m_height = 0;
 		GLuint m_depth = 0;
@@ -371,8 +369,6 @@ namespace gl
 	class texture_view : public bindless_texture_t<GL_TEXTURE>
 	{
 	protected:
-		mutable GLuint64 m_handle64 = GL_NONE;
-
 		GLenum m_target = 0;
 		GLenum m_format = 0;
 		GLenum m_view_format = 0;
