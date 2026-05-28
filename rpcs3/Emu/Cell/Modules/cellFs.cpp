@@ -680,6 +680,11 @@ s32 cellFsStReadInit(u32 fd, vm::cptr<CellFsRingBuffer> ringbuf)
 {
 	cellFs.todo("cellFsStReadInit(fd=%d, ringbuf=*0x%x)", fd, ringbuf);
 
+	if (!ringbuf)
+	{
+		return CELL_EFAULT;
+	}
+
 	if (ringbuf->copy & ~CELL_FS_ST_COPYLESS)
 	{
 		return CELL_EINVAL;

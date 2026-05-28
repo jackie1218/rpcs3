@@ -427,6 +427,8 @@ error_code cellVoiceInitEx(vm::ptr<CellVoiceInitParam> pArg)
 
 	auto& manager = g_fxo->get<voice_manager>();
 
+	std::scoped_lock lock(manager.mtx);
+
 	if (manager.is_init)
 		return CELL_VOICE_ERROR_LIBVOICE_INITIALIZED;
 
