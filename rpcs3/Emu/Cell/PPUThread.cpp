@@ -2524,11 +2524,24 @@ struct save_lv2_tag
 	atomic_t<bool> loaded = false;
 };
 
+// Validate ppu_join_status read from a savestate; coerce out-of-range values to joinable
+// (matches the save-side behavior at ppu_thread::save where >= max is rewritten to joinable).
+static ppu_join_status ppu_load_join_status(utils::serial& ar)
+{
+	const u32 raw = ar.pop<u32>();
+	if (raw >= static_cast<u32>(ppu_join_status::max))
+	{
+		ppu_log.error("ppu_thread savestate: invalid joiner value 0x%x, coercing to joinable", raw);
+		return ppu_join_status::joinable;
+	}
+	return static_cast<ppu_join_status>(raw);
+}
+
 ppu_thread::ppu_thread(utils::serial& ar)
 	: cpu_thread(idm::last_id()) // last_id() is showed to constructor on serialization
 	, stack_size(ar)
 	, stack_addr(ar)
-	, joiner(ar.pop<ppu_join_status>())
+	, joiner(ppu_load_join_status(ar))
 	, entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar))
 	, is_interrupt_thread(ar)
 {
@@ -2696,6 +2709,10 @@ ppu_thread::ppu_thread(utils::serial& ar)
 	{
 		queue_intr_entry();
 		break;
+	}
+	default:
+	{
+		fmt::throw_exception("ppu_thread savestate: invalid status 0x%x", status);
 	}
 	}
 

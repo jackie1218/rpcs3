@@ -671,9 +671,17 @@ error_code cellRtcParseDateTime(ppu_thread& ppu, vm::ptr<CellRtcTick> pUtc, vm::
 
 	u32 pos = 0;
 
-	while (std::isblank(pszDateTime[pos]))
+	// Cap the leading-whitespace scan so a guest-supplied string of all blanks can't run away.
+	constexpr u32 max_parse_len = 64;
+
+	while (pos < max_parse_len && std::isblank(pszDateTime[pos]))
 	{
 		pos++;
+	}
+
+	if (pos >= max_parse_len)
+	{
+		return { CELL_RTC_ERROR_BAD_PARSE, "cellRtcParseDateTime(): only blanks within first %u bytes", max_parse_len };
 	}
 
 	if (std::isdigit(pszDateTime[pos]) &&
@@ -696,10 +704,15 @@ error_code cellRtcParseDateTime(ppu_thread& ppu, vm::ptr<CellRtcTick> pUtc, vm::
 		pos++;
 	}
 
-	// Skip spaces and tabs
-	while (std::isblank(pszDateTime[pos]))
+	// Skip spaces and tabs (bounded to prevent runaway on guest input)
+	while (pos < max_parse_len && std::isblank(pszDateTime[pos]))
 	{
 		pos++;
+	}
+
+	if (pos >= max_parse_len)
+	{
+		return { CELL_RTC_ERROR_BAD_PARSE, "cellRtcParseDateTime(): too many blanks after weekday" };
 	}
 
 	// Month: at least the first three letters
@@ -923,7 +936,10 @@ error_code cellRtcParseRfc3339(ppu_thread& ppu, vm::ptr<CellRtcTick> pUtc, vm::c
 	{
 		u32 mul = 100000;
 
-		for (char c = pszDateTime[++pos]; std::isdigit(c); c = pszDateTime[++pos])
+		// Cap the fractional-seconds scan so a guest-supplied digit run can't iterate unboundedly.
+		constexpr u32 max_rfc3339_len = 64;
+
+		for (char c = pszDateTime[++pos]; pos < max_rfc3339_len && std::isdigit(c); c = pszDateTime[++pos])
 		{
 			date_time->microsecond += digit(c) * mul;
 			mul /= 10;
@@ -1091,6 +1107,13 @@ error_code cellRtcSetTick(ppu_thread& ppu, vm::ptr<CellRtcDateTime> pTime, vm::c
 	if (sys_memory_get_page_attribute(ppu, pTick.addr(), page_attr) != CELL_OK)
 	{
 		return CELL_RTC_ERROR_INVALID_POINTER;
+	}
+
+	// Reject ticks outside the representable range; tick_to_date_time() will throw via narrow<u16>
+	// when the date components overflow (e.g. month_approx underflow for very large ticks).
+	if (pTick->tick > RTC_SYSTEM_TIME_MAX)
+	{
+		return CELL_RTC_ERROR_INVALID_ARG;
 	}
 
 	*pTime = tick_to_date_time(pTick->tick);
@@ -1262,11 +1285,22 @@ error_code cellRtcTickAddMonths(ppu_thread& ppu, vm::ptr<CellRtcTick> pTick0, vm
 	}
 
 	vm::var<CellRtcDateTime> date_time;
-	cellRtcSetTick(ppu, date_time, pTick1);
+	if (error_code err = cellRtcSetTick(ppu, date_time, pTick1))
+	{
+		return err;
+	}
 
-	const s32 total_months = date_time->year * 12 + date_time->month + iAdd - 1;
-	const u16 new_year = total_months / 12;
-	const u16 new_month = total_months - new_year * 12 + 1;
+	// Promote to s64 to avoid overflow from large iAdd values combined with year * 12.
+	const s64 total_months = s64{date_time->year} * 12 + s64{date_time->month} + s64{iAdd} - 1;
+
+	// Validate the result is within u16 year range before narrowing.
+	if (total_months < 0 || total_months / 12 > 0xFFFF)
+	{
+		return CELL_RTC_ERROR_INVALID_ARG;
+	}
+
+	const u16 new_year = static_cast<u16>(total_months / 12);
+	const u16 new_month = static_cast<u16>(total_months - s64{new_year} * 12 + 1);
 
 	s32 month_days;
 

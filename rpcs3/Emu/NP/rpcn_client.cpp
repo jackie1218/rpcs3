@@ -3149,10 +3149,21 @@ namespace rpcn
 			return;
 		}
 
+		// Server-supplied values: clamp to u16 instead of using ::narrow which
+		// would throw on out-of-range data from a malicious/buggy RPCN peer.
+		const u32 main_type_raw = pb_mdata->maintype().value();
+		const u32 sub_type_raw  = pb_mdata->subtype().value();
+
+		if (main_type_raw > 0xFFFFu || sub_type_raw > 0xFFFFu)
+		{
+			rpcn_log.warning("Discarded message with out-of-range main/sub type (main=0x%x sub=0x%x)", main_type_raw, sub_type_raw);
+			return;
+		}
+
 		message_data mdata = {
 			.msgId = message_counter,
-			.mainType = ::narrow<u16>(pb_mdata->maintype().value()),
-			.subType = ::narrow<u16>(pb_mdata->subtype().value()),
+			.mainType = static_cast<u16>(main_type_raw),
+			.subType = static_cast<u16>(sub_type_raw),
 			.msgFeatures = pb_mdata->msgfeatures(),
 			.subject = pb_mdata->subject(),
 			.body = pb_mdata->body()};

@@ -304,6 +304,11 @@ error_code sys_process_get_sdk_version(u32 pid, vm::ptr<s32> version)
 {
 	sys_process.warning("sys_process_get_sdk_version(pid=0x%x, version=*0x%x)", pid, version);
 
+	if (!version)
+	{
+		return CELL_EFAULT;
+	}
+
 	s32 sdk_ver;
 	const s32 ret = process_get_sdk_version(pid, sdk_ver);
 	if (ret != CELL_OK)

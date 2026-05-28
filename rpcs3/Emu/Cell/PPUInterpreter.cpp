@@ -3094,7 +3094,8 @@ auto MULLI()
 		return ppu_exec_select<Flags...>::template select<>();
 
 	static const auto exec = [](ppu_thread& ppu, ppu_opcode_t op) {
-	ppu.gpr[op.rd] = static_cast<s64>(ppu.gpr[op.ra]) * op.simm16;
+	// Compute the product in u64 so signed overflow is well-defined (wrap)
+	ppu.gpr[op.rd] = static_cast<u64>(static_cast<s64>(ppu.gpr[op.ra])) * static_cast<u64>(static_cast<s64>(op.simm16));
 	};
 	RETURN_(ppu, op);
 }
@@ -4589,7 +4590,8 @@ auto MULLD()
 	static const auto exec = [](ppu_thread& ppu, ppu_opcode_t op) {
 	const s64 RA = ppu.gpr[op.ra];
 	const s64 RB = ppu.gpr[op.rb];
-	ppu.gpr[op.rd] = RA * RB;
+	// Compute low-64 bits in u64 so wraparound is well-defined
+	ppu.gpr[op.rd] = static_cast<u64>(RA) * static_cast<u64>(RB);
 	if (op.oe) [[unlikely]]
 	{
 		const s64 high = utils::mulh64(RA, RB);

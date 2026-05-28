@@ -130,6 +130,15 @@ namespace rsx
 		// Some constants
 		auto get_prime_factor = [](uint32_t pitch) -> std::pair<uint32_t, uint32_t>
 		{
+			// pitch == 0 is a malformed input (a 0-byte row stride is nonsensical for a tiled
+			// surface). Without this guard, (pitch & (pitch - 1)) == 0 succeeds, base is 0, and
+			// the caller computes num_tiles_per_row = 0 — which then divides-by-zero inside
+			// tiled_dma_copy. Return 0/0 so the caller can short-circuit cleanly.
+			if (pitch == 0)
+			{
+				return { 0u, 0u };
+			}
+
 			const uint32_t base = (pitch >> 8);
 			if ((pitch & (pitch - 1)) == 0)
 			{
@@ -150,6 +159,13 @@ namespace rsx
 
 		const auto [prime, factor] = get_prime_factor(row_pitch_in_bytes);
 		const uint32_t tiles_per_row = prime * factor;
+
+		if (tiles_per_row == 0)
+		{
+			// Either pitch == 0 or the pitch had no usable prime factor. Either way there is no
+			// tile grid to walk; bail out instead of dividing by zero in the inner kernel.
+			return;
+		}
 		constexpr int op = Decode ? RSX_DMA_OP_DECODE_TILE : RSX_DMA_OP_ENCODE_TILE;
 
 		auto src2 = static_cast<char*>(const_cast<void*>(src));

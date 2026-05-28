@@ -266,7 +266,10 @@ namespace rsx
 						if (section_fills_target(sections[idx]))
 						{
 							const auto remaining = sections.size() - idx;
-							std::memcpy(
+							// memmove (not memcpy) because src (&sections[idx]) and dst (sections.data())
+							// alias the same buffer whenever remaining > idx (i.e. when the surviving
+							// tail overlaps the prefix we're writing into). memcpy is UB in that case.
+							std::memmove(
 								sections.data(),
 								&sections[idx],
 								remaining * sizeof(sections[0])
@@ -2344,6 +2347,7 @@ namespace rsx
 				attributes.depth = 6;
 				subsurface_count = 1;
 				tex_size = static_cast<u32>(get_texture_size(tex));
+				if (!attributes.pitch) [[unlikely]] return {};
 				required_surface_height = tex_size / attributes.pitch;
 				attributes.slice_h = required_surface_height / attributes.depth;
 				break;
@@ -2351,6 +2355,7 @@ namespace rsx
 				attributes.depth = tex.depth();
 				subsurface_count = 1;
 				tex_size = static_cast<u32>(get_texture_size(tex));
+				if (!attributes.pitch || !attributes.depth) [[unlikely]] return {};
 				required_surface_height = tex_size / attributes.pitch;
 				attributes.slice_h = required_surface_height / attributes.depth;
 				break;

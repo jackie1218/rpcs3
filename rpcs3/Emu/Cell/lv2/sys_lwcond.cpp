@@ -31,6 +31,11 @@ error_code _sys_lwcond_create(ppu_thread& ppu, vm::ptr<u32> lwcond_id, u32 lwmut
 
 	sys_lwcond.trace(u8"_sys_lwcond_create(lwcond_id=*0x%x, lwmutex_id=0x%x, control=*0x%x, name=0x%llx (“%s”))", lwcond_id, lwmutex_id, control, name, lv2_obj::name_64{std::bit_cast<be_t<u64>>(name)});
 
+	if (!lwcond_id)
+	{
+		return CELL_EFAULT;
+	}
+
 	u32 protocol;
 
 	// Extract protocol from lwmutex

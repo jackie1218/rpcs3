@@ -594,7 +594,11 @@ usz fragment_program_utils::get_fragment_program_ucode_size(const void* ptr)
 {
 	const auto instBuffer = ptr;
 	usz instIndex = 0;
-	while (true)
+
+	// Bound the walk; a guest fragment program that never sets the end bit
+	// would otherwise read past the mapped region indefinitely. Matches the
+	// hardening on analyse_fragment_program.
+	while (instIndex < rsx::max_fragment_program_instructions)
 	{
 		const v128 inst = v128::loadu(instBuffer, instIndex);
 		const bool end = (inst._u32[0] >> 8) & 0x1;
@@ -610,6 +614,9 @@ usz fragment_program_utils::get_fragment_program_ucode_size(const void* ptr)
 		if (end)
 			return (instIndex)* 4 * 4;
 	}
+
+	// No end marker found within the bound; return a NOP-sized program.
+	return 16;
 }
 
 fragment_program_utils::fragment_program_metadata fragment_program_utils::analyse_fragment_program(const void* ptr)

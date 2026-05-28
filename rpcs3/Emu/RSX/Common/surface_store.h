@@ -1109,6 +1109,14 @@ namespace rsx
 				return {};
 			}
 
+			// (required_pitch * required_height) - (required_pitch - surface_internal_pitch)
+			// underflows when either dimension is zero. Bail out so the result range can't
+			// span the entire address space and pull in unrelated surfaces.
+			if (!required_width || !required_height) [[unlikely]]
+			{
+				return {};
+			}
+
 			const auto test_range = utils::address_range32::start_length(texaddr, (required_pitch * required_height) - (required_pitch - surface_internal_pitch));
 
 			auto process_list_function = [&](surface_ranged_map& data, bool is_depth)

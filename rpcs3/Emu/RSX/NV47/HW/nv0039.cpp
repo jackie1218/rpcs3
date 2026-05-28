@@ -143,6 +143,15 @@ namespace rsx
 				// The formats are just input channel strides. You can use this to do cool tricks like gathering channels
 				// Very rare, only seen in use by Destiny
 				// TODO: Hw accel
+
+				// A zero stride would either spin the per-row while-loop forever (src_stride == 0)
+				// or never advance the destination (dst_stride == 0). Reject both up front.
+				if (!in_format || !out_format) [[unlikely]]
+				{
+					rsx_log.error("NV0039_BUFFER_NOTIFY rejected: zero channel stride (in_format=%u, out_format=%u)", in_format, out_format);
+					return;
+				}
+
 				block2d_copy_with_stride(dst, src, line_length, line_count, in_pitch, out_pitch, in_format, out_format);
 				return;
 			}

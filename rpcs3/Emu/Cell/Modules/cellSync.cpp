@@ -305,8 +305,16 @@ error_code cellSyncRwmRead(ppu_thread& ppu, vm::ptr<CellSyncRwm> rwm, vm::ptr<vo
 		}
 	}
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncRwmInitialize
+	const u32 rwm_size = rwm->size;
+	if (rwm_size == 0 || rwm_size > 0x4000) [[unlikely]]
+	{
+		rwm->ctrl.atomic_op(&CellSyncRwm::try_read_end);
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	// copy data to buffer
-	std::memcpy(buffer.get_ptr(), rwm->buffer.get_ptr(), rwm->size);
+	std::memcpy(buffer.get_ptr(), rwm->buffer.get_ptr(), rwm_size);
 
 	// decrease `readers`, return error if already zero
 	if (!rwm->ctrl.atomic_op(&CellSyncRwm::try_read_end))
@@ -337,8 +345,16 @@ error_code cellSyncRwmTryRead(vm::ptr<CellSyncRwm> rwm, vm::ptr<void> buffer)
 		return not_an_error(CELL_SYNC_ERROR_BUSY);
 	}
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncRwmInitialize
+	const u32 rwm_size = rwm->size;
+	if (rwm_size == 0 || rwm_size > 0x4000) [[unlikely]]
+	{
+		rwm->ctrl.atomic_op(&CellSyncRwm::try_read_end);
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	// copy data to buffer
-	std::memcpy(buffer.get_ptr(), rwm->buffer.get_ptr(), rwm->size);
+	std::memcpy(buffer.get_ptr(), rwm->buffer.get_ptr(), rwm_size);
 
 	// decrease `readers`, return error if already zero
 	if (!rwm->ctrl.atomic_op(&CellSyncRwm::try_read_end))
@@ -381,8 +397,16 @@ error_code cellSyncRwmWrite(ppu_thread& ppu, vm::ptr<CellSyncRwm> rwm, vm::cptr<
 		}
 	}
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncRwmInitialize
+	const u32 rwm_size = rwm->size;
+	if (rwm_size == 0 || rwm_size > 0x4000) [[unlikely]]
+	{
+		rwm->ctrl.exchange({ 0, 0 });
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	// copy data from buffer
-	std::memcpy(rwm->buffer.get_ptr(), buffer.get_ptr(), rwm->size);
+	std::memcpy(rwm->buffer.get_ptr(), buffer.get_ptr(), rwm_size);
 
 	// sync and clear `readers` and `writers`
 	rwm->ctrl.exchange({ 0, 0 });
@@ -410,8 +434,16 @@ error_code cellSyncRwmTryWrite(vm::ptr<CellSyncRwm> rwm, vm::cptr<void> buffer)
 		return not_an_error(CELL_SYNC_ERROR_BUSY);
 	}
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncRwmInitialize
+	const u32 rwm_size = rwm->size;
+	if (rwm_size == 0 || rwm_size > 0x4000) [[unlikely]]
+	{
+		rwm->ctrl.exchange({ 0, 0 });
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	// copy data from buffer
-	std::memcpy(rwm->buffer.get_ptr(), buffer.get_ptr(), rwm->size);
+	std::memcpy(rwm->buffer.get_ptr(), buffer.get_ptr(), rwm_size);
 
 	// sync and clear `readers` and `writers`
 	rwm->ctrl.exchange({ 0, 0 });
@@ -438,7 +470,7 @@ error_code cellSyncQueueInitialize(vm::ptr<CellSyncQueue> queue, vm::ptr<u8> buf
 		return CELL_SYNC_ERROR_ALIGN;
 	}
 
-	if (!depth || size % 16) [[unlikely]]
+	if (!depth || size % 16 || size > 0x4000) [[unlikely]]
 	{
 		return CELL_SYNC_ERROR_INVAL;
 	}
@@ -470,6 +502,13 @@ error_code cellSyncQueuePush(ppu_thread& ppu, vm::ptr<CellSyncQueue> queue, vm::
 
 	const u32 depth = queue->check_depth();
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncQueueInitialize
+	const u32 q_size = queue->size;
+	if (q_size == 0 || q_size > 0x4000 || q_size % 16) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	u32 position;
 
 	while (!queue->ctrl.atomic_op([&](CellSyncQueue::ctrl_t& ctrl)
@@ -484,7 +523,7 @@ error_code cellSyncQueuePush(ppu_thread& ppu, vm::ptr<CellSyncQueue> queue, vm::
 	}
 
 	// copy data from the buffer at the position
-	std::memcpy(&queue->buffer[position * queue->size], buffer.get_ptr(), queue->size);
+	std::memcpy(&queue->buffer[position * q_size], buffer.get_ptr(), q_size);
 
 	queue->ctrl.atomic_op(&CellSyncQueue::push_end);
 
@@ -507,6 +546,13 @@ error_code cellSyncQueueTryPush(vm::ptr<CellSyncQueue> queue, vm::cptr<void> buf
 
 	const u32 depth = queue->check_depth();
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncQueueInitialize
+	const u32 q_size = queue->size;
+	if (q_size == 0 || q_size > 0x4000 || q_size % 16) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	u32 position;
 
 	while (!queue->ctrl.atomic_op([&](CellSyncQueue::ctrl_t& ctrl)
@@ -518,7 +564,7 @@ error_code cellSyncQueueTryPush(vm::ptr<CellSyncQueue> queue, vm::cptr<void> buf
 	}
 
 	// copy data from the buffer at the position
-	std::memcpy(&queue->buffer[position * queue->size], buffer.get_ptr(), queue->size);
+	std::memcpy(&queue->buffer[position * q_size], buffer.get_ptr(), q_size);
 
 	queue->ctrl.atomic_op(&CellSyncQueue::push_end);
 
@@ -541,6 +587,13 @@ error_code cellSyncQueuePop(ppu_thread& ppu, vm::ptr<CellSyncQueue> queue, vm::p
 
 	const u32 depth = queue->check_depth();
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncQueueInitialize
+	const u32 q_size = queue->size;
+	if (q_size == 0 || q_size > 0x4000 || q_size % 16) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	u32 position;
 
 	while (!queue->ctrl.atomic_op([&](CellSyncQueue::ctrl_t& ctrl)
@@ -555,7 +608,7 @@ error_code cellSyncQueuePop(ppu_thread& ppu, vm::ptr<CellSyncQueue> queue, vm::p
 	}
 
 	// copy data at the position to the buffer
-	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * queue->size], queue->size);
+	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * q_size], q_size);
 
 	queue->ctrl.atomic_op(&CellSyncQueue::pop_end);
 
@@ -578,6 +631,13 @@ error_code cellSyncQueueTryPop(vm::ptr<CellSyncQueue> queue, vm::ptr<void> buffe
 
 	const u32 depth = queue->check_depth();
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncQueueInitialize
+	const u32 q_size = queue->size;
+	if (q_size == 0 || q_size > 0x4000 || q_size % 16) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	u32 position;
 
 	while (!queue->ctrl.atomic_op([&](CellSyncQueue::ctrl_t& ctrl)
@@ -589,7 +649,7 @@ error_code cellSyncQueueTryPop(vm::ptr<CellSyncQueue> queue, vm::ptr<void> buffe
 	}
 
 	// copy data at the position to the buffer
-	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * queue->size], queue->size);
+	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * q_size], q_size);
 
 	queue->ctrl.atomic_op(&CellSyncQueue::pop_end);
 
@@ -612,6 +672,13 @@ error_code cellSyncQueuePeek(ppu_thread& ppu, vm::ptr<CellSyncQueue> queue, vm::
 
 	const u32 depth = queue->check_depth();
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncQueueInitialize
+	const u32 q_size = queue->size;
+	if (q_size == 0 || q_size > 0x4000 || q_size % 16) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	u32 position;
 
 	while (!queue->ctrl.atomic_op([&](CellSyncQueue::ctrl_t& ctrl)
@@ -626,7 +693,7 @@ error_code cellSyncQueuePeek(ppu_thread& ppu, vm::ptr<CellSyncQueue> queue, vm::
 	}
 
 	// copy data at the position to the buffer
-	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * queue->size], queue->size);
+	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * q_size], q_size);
 
 	queue->ctrl.atomic_op(&CellSyncQueue::pop_end);
 
@@ -649,6 +716,13 @@ error_code cellSyncQueueTryPeek(vm::ptr<CellSyncQueue> queue, vm::ptr<void> buff
 
 	const u32 depth = queue->check_depth();
 
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncQueueInitialize
+	const u32 q_size = queue->size;
+	if (q_size == 0 || q_size > 0x4000 || q_size % 16) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	u32 position;
 
 	while (!queue->ctrl.atomic_op([&](CellSyncQueue::ctrl_t& ctrl)
@@ -660,7 +734,7 @@ error_code cellSyncQueueTryPeek(vm::ptr<CellSyncQueue> queue, vm::ptr<void> buff
 	}
 
 	// copy data at the position to the buffer
-	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * queue->size], queue->size);
+	std::memcpy(buffer.get_ptr(), &queue->buffer[position % depth * q_size], q_size);
 
 	queue->ctrl.atomic_op(&CellSyncQueue::pop_end);
 
@@ -1157,8 +1231,15 @@ error_code _cellSyncLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> qu
 	}
 
 	const s32 depth = queue->m_depth;
-	const s32 size = queue->m_size;
+	const u32 size = queue->m_size;
 	const s32 pos = *position;
+
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncLFQueueInitialize
+	if (size == 0 || size > 0x4000) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	const u32 addr = vm::cast<u64>((queue->m_buffer.addr() & ~1ull) + size * (pos >= depth ? pos - depth : pos));
 	std::memcpy(vm::base(addr), buffer.get_ptr(), size);
 
@@ -1457,8 +1538,15 @@ error_code _cellSyncLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> que
 	}
 
 	const s32 depth = queue->m_depth;
-	const s32 size = queue->m_size;
+	const u32 size = queue->m_size;
 	const s32 pos = *position;
+
+	// Re-validate guest-mutable size against the bounds enforced by cellSyncLFQueueInitialize
+	if (size == 0 || size > 0x4000) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_INVAL;
+	}
+
 	const u32 addr = vm::cast<u64>((queue->m_buffer.addr() & ~1) + size * (pos >= depth ? pos - depth : pos));
 	std::memcpy(buffer.get_ptr(), vm::base(addr), size);
 

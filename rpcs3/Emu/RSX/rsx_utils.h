@@ -448,13 +448,22 @@ namespace rsx
 		const u32 log2_h = ceil_log2(height);
 		const u32 log2_d = ceil_log2(depth);
 
+		// calculate_z_index interleaves x|y|z bits as if every axis were padded to its next_pow2.
+		// When the actual depth (or width/height) is not a power of two, the computed source
+		// index can land in the [N, next_pow2(N)) gap and read past the source buffer, which the
+		// callers size as exactly width * height * depth elements (not the padded cube).
+		// Clamp the index to that real bound; out-of-range slots get a zero texel, matching the
+		// effect of an unpopulated swizzle cell.
+		const u32 src_element_count = u32{width} * u32{height} * u32{depth};
+
 		for (u32 z = 0; z < depth; ++z)
 		{
 			for (u32 y = 0; y < height; ++y)
 			{
 				for (u32 x = 0; x < width; ++x)
 				{
-					*dst++ = src[calculate_z_index(x, y, z, log2_w, log2_h, log2_d)];
+					const u32 src_index = calculate_z_index(x, y, z, log2_w, log2_h, log2_d);
+					*dst++ = (src_index < src_element_count) ? src[src_index] : T{};
 				}
 			}
 		}

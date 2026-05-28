@@ -51,7 +51,12 @@ lv2_memory::lv2_memory(utils::serial& ar)
 	{
 		if (addr)
 		{
-			return make_single_value(ensure(vm::get(vm::any, addr)->peek(addr).second));
+			const auto area = vm::get(vm::any, addr);
+			if (!area)
+			{
+				fmt::throw_exception("Invalid lv2_memory savestate: no vm area at addr=0x%x", addr);
+			}
+			return make_single_value(ensure(area->peek(addr).second));
 		}
 
 		return null_ptr;
@@ -198,6 +203,13 @@ error_code sys_mmapper_allocate_shared_memory(ppu_thread& ppu, u64 ipc_key, u64 
 		return CELL_EALIGN;
 	}
 
+	// create_lv2_shm narrows size to u32; reject 4 GiB+ requests so an
+	// alignment-OK truncation to size=0 cannot create a bogus lv2_memory.
+	if (size > u32{umax})
+	{
+		return CELL_ENOMEM;
+	}
+
 	// Check page granularity
 	switch (flags & SYS_MEMORY_GRANULARITY_MASK)
 	{
@@ -248,6 +260,11 @@ error_code sys_mmapper_allocate_shared_memory_from_container(ppu_thread& ppu, u6
 	if (size == 0)
 	{
 		return CELL_EALIGN;
+	}
+
+	if (size > u32{umax})
+	{
+		return CELL_ENOMEM;
 	}
 
 	// Check page granularity.
@@ -304,6 +321,11 @@ error_code sys_mmapper_allocate_shared_memory_ext(ppu_thread& ppu, u64 ipc_key, 
 	if (size == 0)
 	{
 		return CELL_EALIGN;
+	}
+
+	if (size > u32{umax})
+	{
+		return CELL_ENOMEM;
 	}
 
 	switch (flags & SYS_MEMORY_GRANULARITY_MASK)
@@ -404,6 +426,11 @@ error_code sys_mmapper_allocate_shared_memory_from_container_ext(ppu_thread& ppu
 	if (size == 0)
 	{
 		return CELL_EALIGN;
+	}
+
+	if (size > u32{umax})
+	{
+		return CELL_ENOMEM;
 	}
 
 	switch (flags & SYS_MEMORY_PAGE_SIZE_MASK)
@@ -839,6 +866,13 @@ error_code sys_mmapper_enable_page_fault_notification(ppu_thread& ppu, u32 start
 	{
 		// Not enough system resources.
 		return CELL_EAGAIN;
+	}
+
+	if (res != CELL_OK)
+	{
+		// Any other error from port_create means *port_id is still 0;
+		// propagate the failure instead of inserting a bogus entry.
+		return res;
 	}
 
 	sys_event_port_connect_local(ppu, *port_id, event_queue_id);

@@ -191,7 +191,7 @@ namespace gl
 		case texture::internal_format::depth16:
 			return { .format = GL_DEPTH_COMPONENT, .type = GL_UNSIGNED_SHORT, .block_size = 2, .swap_bytes = true };
 		case texture::internal_format::depth32f:
-			return { .format = GL_DEPTH_COMPONENT, .type = GL_FLOAT, .block_size = 2, .swap_bytes = true };
+			return { .format = GL_DEPTH_COMPONENT, .type = GL_FLOAT, .block_size = 4, .swap_bytes = true };
 		case texture::internal_format::depth24_stencil8:
 		case texture::internal_format::depth32f_stencil8:
 			return { .format = GL_DEPTH_STENCIL, .type = GL_UNSIGNED_INT_24_8, .block_size = 4, .swap_bytes = true };

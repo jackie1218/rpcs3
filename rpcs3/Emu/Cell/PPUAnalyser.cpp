@@ -1261,6 +1261,13 @@ bool ppu_module<lv2_obj>::analyse(u32 lib_toc, u32 entry, const u32 sec_end, con
 			}
 			else
 			{
+				// FDE: ensure at least 6 u32 words (0x18 bytes) are available before reading ptr[2..5]
+				if (_ptr + 6 > sec_end)
+				{
+					ppu_log.error(".eh_frame: [0x%x] FDE too small (truncated before required fields)", ptr);
+					break;
+				}
+
 				// Get associated CIE (currently unused)
 				const vm::cptr<u32> cie = vm::cast(_ptr.addr() - ptr[1] + 4);
 

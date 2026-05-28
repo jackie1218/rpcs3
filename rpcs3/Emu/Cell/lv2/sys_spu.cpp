@@ -512,6 +512,11 @@ error_code _sys_spu_image_get_information(ppu_thread& ppu, vm::ptr<sys_spu_image
 
 	sys_spu.warning("_sys_spu_image_get_information(img=*0x%x, entry_point=*0x%x, nsegs=*0x%x)", img, entry_point, nsegs);
 
+	if (!entry_point || !nsegs)
+	{
+		return CELL_EFAULT;
+	}
+
 	if (img->type != SYS_SPU_IMAGE_TYPE_KERNEL)
 	{
 		return CELL_EINVAL;
@@ -1768,6 +1773,11 @@ error_code sys_spu_thread_group_get_priority(ppu_thread& ppu, u32 id, vm::ptr<s3
 
 	sys_spu.trace("sys_spu_thread_group_get_priority(id=0x%x, priority=*0x%x)", id, priority);
 
+	if (!priority)
+	{
+		return CELL_EFAULT;
+	}
+
 	const auto group = idm::get_unlocked<lv2_spu_group>(id);
 
 	if (!group)
@@ -2510,6 +2520,11 @@ error_code sys_isolated_spu_create(ppu_thread& ppu, vm::ptr<u32> id, vm::ptr<voi
 	ppu.state += cpu_flag::wait;
 
 	sys_spu.todo("sys_isolated_spu_create(id=*0x%x, image=*0x%x, arg1=0x%llx, arg2=0x%llx, arg3=0x%llx, arg4=0x%llx)", id, image, arg1, arg2, arg3, arg4);
+
+	if (!id)
+	{
+		return CELL_EFAULT;
+	}
 
 	// TODO: More accurate SPU image memory size calculation
 	u32 max = image.addr() & -4096;

@@ -101,8 +101,23 @@ namespace rsx::assembler
 				src2.reg_type == RSX_FP_REGISTER_TYPE_CONSTANT;
 		};
 
+		// Bound the bytecode walk against the program's declared ucode length AND the architectural
+		// fragment-program instruction ceiling. A malformed guest program that never sets the end
+		// bit would otherwise drive an unbounded read past prog.get_data(). Each FP instruction is
+		// 16 bytes, so pc * 16 is the current byte offset into the ucode buffer. Match the shape
+		// of analyse_fragment_program's hardening (see commit 3f86ff82e).
+		const u32 ucode_length = prog.ucode_length;
+		const u32 max_instructions = std::min<u32>(rsx::max_fragment_program_instructions, ucode_length / 16);
+
 		while (!end)
 		{
+			if (pc >= max_instructions)
+			{
+				// Ran out of declared bytecode without ever seeing the end bit. Treat the trailing
+				// region as a NOP block and stop walking so we don't read past the mapped region.
+				break;
+			}
+
 			BasicBlock** found = end_blocks.find_if(FN(x->id == pc));
 
 			if (!found)

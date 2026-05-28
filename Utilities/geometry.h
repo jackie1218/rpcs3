@@ -173,23 +173,23 @@ struct position1_base
 	}
 
 	template<typename RhsT>
-	position1_base& operator *=(RhsT rhs) const
+	position1_base& operator *=(RhsT rhs)
 	{
 		x *= rhs;
 		return *this;
 	}
-	position1_base& operator *=(const position1_base& rhs) const
+	position1_base& operator *=(const position1_base& rhs)
 	{
 		x *= rhs.x;
 		return *this;
 	}
 	template<typename RhsT>
-	position1_base& operator /=(RhsT rhs) const
+	position1_base& operator /=(RhsT rhs)
 	{
 		x /= rhs;
 		return *this;
 	}
-	position1_base& operator /=(const position1_base& rhs) const
+	position1_base& operator /=(const position1_base& rhs)
 	{
 		x /= rhs.x;
 		return *this;

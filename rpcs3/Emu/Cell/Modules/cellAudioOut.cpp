@@ -190,9 +190,69 @@ void audio_out_configuration::save(utils::serial& ar)
 {
 	GET_OR_USE_SERIALIZATION_VERSION(ar.is_writing(), cellAudioOut);
 
+	// The CellAudioOutDeviceInfo::availableModes[] guest-visible array is fixed
+	// at 16 entries (see cellAudioOutGetDeviceInfo ensure(<=16)). A crafted
+	// savestate could otherwise drive a multi-GB std::vector allocation here.
+	constexpr usz max_sound_modes = 16;
+
+	const auto valid_channel = [](u8 ch)
+	{
+		return ch == CELL_AUDIO_OUT_CHNUM_2 || ch == CELL_AUDIO_OUT_CHNUM_6 || ch == CELL_AUDIO_OUT_CHNUM_8;
+	};
+	const auto valid_type = [](u8 type)
+	{
+		return type == CELL_AUDIO_OUT_CODING_TYPE_LPCM
+			|| type == CELL_AUDIO_OUT_CODING_TYPE_AC3
+			|| type == CELL_AUDIO_OUT_CODING_TYPE_DTS;
+	};
+	const auto valid_fs = [](u8 fs)
+	{
+		return fs == CELL_AUDIO_OUT_FS_32KHZ
+			|| fs == CELL_AUDIO_OUT_FS_44KHZ
+			|| fs == CELL_AUDIO_OUT_FS_48KHZ
+			|| fs == CELL_AUDIO_OUT_FS_88KHZ
+			|| fs == CELL_AUDIO_OUT_FS_96KHZ
+			|| fs == CELL_AUDIO_OUT_FS_176KHZ
+			|| fs == CELL_AUDIO_OUT_FS_192KHZ;
+	};
+
 	for (auto& state : out)
 	{
-		ar(state.state, state.channels, state.encoder, state.downmixer, state.copy_control, state.sound_modes, state.sound_mode);
+		if (ar.is_writing())
+		{
+			ar(state.state, state.channels, state.encoder, state.downmixer, state.copy_control, state.sound_modes, state.sound_mode);
+		}
+		else
+		{
+			ar(state.state, state.channels, state.encoder, state.downmixer, state.copy_control);
+
+			// Read the sound_modes vector size first (VLE-encoded by the vector
+			// serializer), validate it, then deserialize entries so a crafted
+			// savestate cannot drive a runaway allocation here.
+			state.sound_modes.clear();
+			usz mode_cnt = 0;
+			ensure(ar.deserialize_vle(mode_cnt));
+			if (mode_cnt > max_sound_modes)
+			{
+				fmt::throw_exception("Invalid cellAudioOut sound_modes count in savestate: %u (max %u)", mode_cnt, max_sound_modes);
+			}
+			state.sound_modes.resize(mode_cnt);
+			for (CellAudioOutSoundMode& mode : state.sound_modes)
+			{
+				ar(mode);
+				if (!valid_channel(mode.channel) || !valid_type(mode.type) || !valid_fs(mode.fs))
+				{
+					fmt::throw_exception("Invalid cellAudioOut sound_mode in savestate: channel=%u type=%u fs=%u", mode.channel, mode.type, mode.fs);
+				}
+			}
+
+			ar(state.sound_mode);
+			if (!valid_channel(state.sound_mode.channel) || !valid_type(state.sound_mode.type) || !valid_fs(state.sound_mode.fs))
+			{
+				fmt::throw_exception("Invalid cellAudioOut active sound_mode in savestate: channel=%u type=%u fs=%u",
+					state.sound_mode.channel, state.sound_mode.type, state.sound_mode.fs);
+			}
+		}
 	}
 }
 

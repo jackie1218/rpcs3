@@ -325,6 +325,11 @@ error_code sys_memory_get_user_memory_size(cpu_thread& cpu, vm::ptr<sys_memory_i
 {
 	cpu.state += cpu_flag::wait;
 
+	if (!mem_info)
+	{
+		return CELL_EFAULT;
+	}
+
 	// Get "default" memory container
 	auto& dct = g_fxo->get<lv2_memory_container>();
 
@@ -377,6 +382,11 @@ error_code sys_memory_container_create(cpu_thread& cpu, vm::ptr<u32> cid, u64 si
 	cpu.state += cpu_flag::wait;
 
 	sys_memory.warning("sys_memory_container_create(cid=*0x%x, size=0x%x)", cid, size);
+
+	if (!cid)
+	{
+		return CELL_EFAULT;
+	}
 
 	// Round down to 1 MB granularity
 	size &= ~0xfffff;

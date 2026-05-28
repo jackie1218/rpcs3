@@ -401,6 +401,11 @@ error_code sys_vm_test(ppu_thread& ppu, u32 addr, u32 size, vm::ptr<u64> result)
 
 	sys_vm.warning("sys_vm_test(addr=0x%x, size=0x%x, result=*0x%x)", addr, size, result);
 
+	if (!result)
+	{
+		return CELL_EFAULT;
+	}
+
 	const auto block = idm::get_unlocked<sys_vm_t>(sys_vm_t::find_id(addr));
 
 	if (!block || u64{addr} + size > u64{block->addr} + block->size)
@@ -419,6 +424,11 @@ error_code sys_vm_get_statistics(ppu_thread& ppu, u32 addr, vm::ptr<sys_vm_stati
 	ppu.state += cpu_flag::wait;
 
 	sys_vm.warning("sys_vm_get_statistics(addr=0x%x, stat=*0x%x)", addr, stat);
+
+	if (!stat)
+	{
+		return CELL_EFAULT;
+	}
 
 	const auto block = idm::get_unlocked<sys_vm_t>(sys_vm_t::find_id(addr));
 

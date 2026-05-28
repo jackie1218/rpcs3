@@ -230,6 +230,14 @@ namespace rsx
 			else
 			{
 				const u16 read_h = std::min(static_cast<u16>(clip_h / scale_y), in_h);
+
+				// (read_h - 1) underflows the in_pitch multiplication when scale_y is large enough
+				// to collapse clip_h/scale_y to 0; treat the zero-height transfer as a NOP.
+				if (read_h == 0)
+				{
+					return { false, src_info, dst_info };
+				}
+
 				const u32 data_length = in_pitch * (read_h - 1) + src_line_length;
 
 				if (src_address = get_address(src_offset, src_dma, data_length); !src_address)

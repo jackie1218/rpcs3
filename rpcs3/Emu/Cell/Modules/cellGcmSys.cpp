@@ -252,6 +252,11 @@ u32 cellGcmGetReportDataLocation(ppu_thread& ppu, u32 index, u32 location)
 	cellGcmSys.warning("cellGcmGetReportDataLocation(index=%d, location=%d)", index, location);
 
 	vm::ptr<CellGcmReportData> report = cellGcmGetReportDataAddressLocation(ppu, index, location);
+	if (!report)
+	{
+		// cellGcmGetReportDataAddressLocation returns vm::null on bad index.
+		return 0;
+	}
 	return report->value;
 }
 
@@ -260,6 +265,10 @@ u64 cellGcmGetTimeStampLocation(ppu_thread& ppu, u32 index, u32 location)
 	cellGcmSys.trace("cellGcmGetTimeStampLocation(index=%d, location=%d)", index, location);
 
 	vm::ptr<CellGcmReportData> report = cellGcmGetReportDataAddressLocation(ppu, index, location);
+	if (!report)
+	{
+		return 0;
+	}
 
 	// Timestamp reports don't need host GPU access and are much faster to emulate
 	return vm::get_super_ptr<CellGcmReportData>(report.addr())->timer;
@@ -601,7 +610,8 @@ ret_type gcmSetPrepareFlip(ppu_thread& ppu, vm::ptr<CellGcmContextData> ctxt, u3
 		return CELL_GCM_ERROR_FAILURE;
 	}
 
-	if (!old_api && ctxt->current + 2 >= ctxt->end)
+	// Compare in u64 to avoid 32-bit wraparound when current is near the end of the address space.
+	if (!old_api && static_cast<u64>(ctxt->current.addr()) + 8 > static_cast<u64>(ctxt->end.addr()))
 	{
 		if (s32 res = ctxt->callback(ppu, ctxt, 8 /* ??? */))
 		{
@@ -715,7 +725,8 @@ void cellGcmSetUserCommand(ppu_thread& ppu, vm::ptr<CellGcmContextData> ctxt, u3
 {
 	cellGcmSys.trace("cellGcmSetUserCommand(ctxt=*0x%x, cause=0x%x)", ctxt, cause);
 
-	if (ctxt->current + 2 >= ctxt->end)
+	// Compare in u64 to avoid 32-bit wraparound when current is near the end of the address space.
+	if (static_cast<u64>(ctxt->current.addr()) + 8 > static_cast<u64>(ctxt->end.addr()))
 	{
 		if (s32 res = ctxt->callback(ppu, ctxt, 8 /* ??? */))
 		{
@@ -741,7 +752,8 @@ void cellGcmSetWaitFlip(ppu_thread& ppu, vm::ptr<CellGcmContextData> ctxt)
 {
 	cellGcmSys.trace("cellGcmSetWaitFlip(ctxt=*0x%x)", ctxt);
 
-	if (ctxt->current + 2 >= ctxt->end)
+	// Compare in u64 to avoid 32-bit wraparound when current is near the end of the address space.
+	if (static_cast<u64>(ctxt->current.addr()) + 8 > static_cast<u64>(ctxt->end.addr()))
 	{
 		if (s32 res = ctxt->callback(ppu, ctxt, 8 /* ??? */))
 		{
@@ -1133,6 +1145,12 @@ error_code cellGcmMapMainMemory(ppu_thread& ppu, u32 ea, u32 size, vm::ptr<u32> 
 	// Use the offset table to find the next free io address
 	for (u32 io = 0, end = (rsx::get_current_renderer()->main_mem_size - gcm_cfg.reserved_size) >> 20, unmap_count = 1; io < end; unmap_count++)
 	{
+		// Stop scanning before the trailing index escapes the eaAddress[0x200] table bounds.
+		if (io + unmap_count > end)
+		{
+			break;
+		}
+
 		if (gcm_cfg.offsetTable.eaAddress[io + unmap_count - 1] > 0xBFF)
 		{
 			if (unmap_count >= (size >> 20))

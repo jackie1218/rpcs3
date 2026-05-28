@@ -677,6 +677,14 @@ bool SCEDecrypter::LoadMetadata(const u8 erk[32], const u8 riv[16])
 	// Load the metadata header.
 	meta_hdr.Load(metadata_headers.get());
 
+	// Validate that the metadata section headers and data keys fit in metadata_headers.
+	if (u64{meta_hdr.section_count} * sizeof(MetadataSectionHeader) + u64{meta_hdr.key_count} * 0x10 + sizeof(meta_hdr) > metadata_headers_size)
+	{
+		self_log.error("Invalid SCE metadata header (section_count=0x%x, key_count=0x%x, metadata_headers_size=0x%llx)",
+			meta_hdr.section_count, meta_hdr.key_count, metadata_headers_size);
+		return false;
+	}
+
 	// Load the metadata section headers.
 	meta_shdr.clear();
 	for (unsigned int i = 0; i < meta_hdr.section_count; i++)
@@ -1198,7 +1206,7 @@ bool SELFDecrypter::DecryptData()
 	{
 		if (meta_shdr[i].encrypted == 3)
 		{
-			if ((meta_shdr[i].key_idx <= meta_hdr.key_count - 1) && (meta_shdr[i].iv_idx <= meta_hdr.key_count))
+			if ((meta_shdr[i].key_idx < meta_hdr.key_count) && (meta_shdr[i].iv_idx < meta_hdr.key_count))
 				data_buf_length += ::narrow<u32>(meta_shdr[i].data_size);
 		}
 	}
@@ -1221,7 +1229,7 @@ bool SELFDecrypter::DecryptData()
 		if (meta_shdr[i].encrypted == 3)
 		{
 			// Make sure the key and iv are not out of boundaries.
-			if((meta_shdr[i].key_idx <= meta_hdr.key_count - 1) && (meta_shdr[i].iv_idx <= meta_hdr.key_count))
+			if((meta_shdr[i].key_idx < meta_hdr.key_count) && (meta_shdr[i].iv_idx < meta_hdr.key_count))
 			{
 				// Get the key and iv from the previously stored key buffer.
 				memcpy(data_key, data_keys.get() + meta_shdr[i].key_idx * 0x10, 0x10);

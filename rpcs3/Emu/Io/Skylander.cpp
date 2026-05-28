@@ -235,6 +235,12 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 
 			std::array<u8, 32> q_result = {};
 
+			if (buf_size < 1)
+			{
+				// Guest sent a zero-length control transfer; nothing to dispatch on.
+				break;
+			}
+
 			switch (buf[0])
 			{
 			case 'A':

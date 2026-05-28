@@ -13,23 +13,34 @@ namespace vk
 		/**
 		* Key layout:
 		* 00-08: Format  (Max 255)
-		* 08-24: Width   (Max 64K)
-		* 24-40: Height  (Max 64K)
-		* 40-48: Depth   (Max 255)
-		* 48-54: Mipmaps (Max 63)   <- We have some room here, it is not possible to have more than 12 mip levels on PS3 and 16 on PC is pushing it.
-		* 54-56: Type    (Max 3)
-		* 56-57: Sharing (Max 1)    <- Boolean. Exclusive = 0, shared = 1
-		* 57-64: Flags   (Max 127)  <- We have some room here, we only care about a small subset of create flags.
+		* 08-22: Width   (Max 16K)  <- PS3 max texture dimension is 4096; 16K covers PC scratch images.
+		* 22-36: Height  (Max 16K)
+		* 36-46: Depth   (Max 1024) <- PS3 3D textures can be up to 512 deep, so 8 bits would collide.
+		* 46-51: Mipmaps (Max 31)   <- PS3 caps at 12 mip levels, 16 on PC is pushing it.
+		* 51-53: Type    (Max 3)
+		* 53-54: Sharing (Max 1)    <- Boolean. Exclusive = 0, shared = 1
+		* 54-64: Flags   (Max 1023) <- We only care about a small subset of create flags.
+		*
+		* IMPORTANT: every field is masked before being shifted into place so out-of-range values
+		* cannot bleed into adjacent fields and produce a hash collision. The ensure() calls catch
+		* values that exceed the architectural limits we expect — they should never fire in practice.
 		*/
 		ensure(static_cast<u32>(format) <= 0xFF);
+		ensure(w <= 0x3FFF);
+		ensure(h <= 0x3FFF);
+		ensure(d <= 0x3FF);
+		ensure(mipmaps <= 0x1F);
+		ensure(static_cast<u32>(type) <= 0x3);
+		ensure(static_cast<u32>(sharing_mode) <= 0x1);
+
 		return (static_cast<u64>(format) & 0xFF) |
-			(static_cast<u64>(w) << 8) |
-			(static_cast<u64>(h) << 24) |
-			(static_cast<u64>(d) << 40) |
-			(static_cast<u64>(mipmaps) << 48) |
-			(static_cast<u64>(type) << 54) |
-			(static_cast<u64>(sharing_mode) << 56) |
-			(static_cast<u64>(create_flags) << 57);
+			((static_cast<u64>(w) & 0x3FFF) << 8) |
+			((static_cast<u64>(h) & 0x3FFF) << 22) |
+			((static_cast<u64>(d) & 0x3FF) << 36) |
+			((static_cast<u64>(mipmaps) & 0x1F) << 46) |
+			((static_cast<u64>(type) & 0x3) << 51) |
+			((static_cast<u64>(sharing_mode) & 0x1) << 53) |
+			((static_cast<u64>(create_flags) & 0x3FF) << 54);
 	}
 
 	texture_cache::cached_image_reference_t::cached_image_reference_t(texture_cache* parent, std::unique_ptr<vk::viewable_image>& previous)

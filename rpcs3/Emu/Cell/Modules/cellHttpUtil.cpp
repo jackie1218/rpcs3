@@ -52,6 +52,14 @@ error_code cellHttpUtilParseUri(vm::ptr<CellHttpUri> uri, vm::cptr<char> str, vm
 		{
 			return CELL_HTTP_UTIL_ERROR_NO_BUFFER;
 		}
+
+		// Populate mode (uri != null) requires a pool buffer to write into.
+		// The original guard only short-circuited when both pool and uri were null AND required was null,
+		// leaving a path where uri != null but pool == null would dereference null below in the memcpy calls.
+		if (!pool && uri)
+		{
+			return CELL_HTTP_UTIL_ERROR_NO_BUFFER;
+		}
 	}
 
 	LUrlParser::clParseURL URL = LUrlParser::clParseURL::ParseURL(str.get_ptr());

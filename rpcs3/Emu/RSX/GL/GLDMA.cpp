@@ -76,7 +76,10 @@ namespace gl
 	utils::address_range32 to_dma_block_range(u32 start, u32 length)
 	{
 		const auto start_block_address = start & s_dma_block_mask;
-		const auto end_block_address = (start + length + s_dma_block_size - 1) & s_dma_block_mask;
+		// Compute end alignment in u64 so a range that ends in the last block of the address
+		// space (start + length near 0x1'0000'0000) does not wrap and produce a giant inverted range.
+		const u64 end64 = (u64{start} + u64{length} + s_dma_block_size - 1) & u64{s_dma_block_mask};
+		const u32 end_block_address = static_cast<u32>(std::min<u64>(end64, 0xFFFF'FFFFull));
 		return utils::address_range32::start_length(start_block_address, end_block_address - start_block_address);
 	}
 
@@ -112,7 +115,14 @@ namespace gl
 			 id += s_dma_block_size)
 		{
 			ensure((id % s_dma_block_size) == 0);
-			g_dma_pool[id]->set_parent(new_owner.get());
+			// Use find() instead of operator[] so we do not default-construct a null unique_ptr and
+			// then dereference it. If a sub-block was never allocated separately (e.g. because the
+			// original allocation already covered this range), there is nothing to reparent here.
+			const auto it = g_dma_pool.find(id);
+			if (it != g_dma_pool.end() && it->second)
+			{
+				it->second->set_parent(new_owner.get());
+			}
 		}
 
 		block = std::move(new_owner);
