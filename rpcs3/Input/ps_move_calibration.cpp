@@ -163,13 +163,27 @@ void psmove_calibration_get_usb_accel_values(const reports::ps_move_calibration_
 		break;
 	}
 
+	// Guard against malicious/corrupt device data that would make a divisor zero (Inf factor)
+	if (x2 == x1 || y2 == y1 || z2 == z1)
+	{
+		move_log.error("psmove_calibration_get_usb_accel_values: invalid calibration data (zero range): x=(%d,%d) y=(%d,%d) z=(%d,%d)", x1, x2, y1, y2, z1, z2);
+		device.calibration.is_valid = false;
+		device.calibration.accel_x_factor = 1.0f;
+		device.calibration.accel_y_factor = 1.0f;
+		device.calibration.accel_z_factor = 1.0f;
+		device.calibration.accel_x_offset = 0.0f;
+		device.calibration.accel_y_offset = 0.0f;
+		device.calibration.accel_z_offset = 0.0f;
+		return;
+	}
+
 	device.calibration.accel_x_factor = 2.0f / static_cast<float>(x2 - x1);
 	device.calibration.accel_y_factor = 2.0f / static_cast<float>(y2 - y1);
 	device.calibration.accel_z_factor = 2.0f / static_cast<float>(z2 - z1);
 
 	device.calibration.accel_x_offset = -(device.calibration.accel_x_factor * static_cast<float>(x1)) - 1.0f;
-	device.calibration.accel_y_offset = -(device.calibration.accel_y_factor * static_cast<float>(x1)) - 1.0f;
-	device.calibration.accel_z_offset = -(device.calibration.accel_z_factor * static_cast<float>(x1)) - 1.0f;
+	device.calibration.accel_y_offset = -(device.calibration.accel_y_factor * static_cast<float>(y1)) - 1.0f;
+	device.calibration.accel_z_offset = -(device.calibration.accel_z_factor * static_cast<float>(z1)) - 1.0f;
 }
 
 void psmove_calibration_get_usb_gyro_values(const reports::ps_move_calibration_blob& calibration, ps_move_device& device)
@@ -193,6 +207,20 @@ void psmove_calibration_get_usb_gyro_values(const reports::ps_move_calibration_b
 
 		constexpr f32 calibration_rpm = 80.0f;
 		constexpr f32 factor = calibration_rpm * rpm_to_rad_per_sec;
+
+		// Guard against malicious/corrupt device data that would make a divisor zero
+		if (x == 0 || y == 0 || z == 0)
+		{
+			move_log.error("psmove_calibration_get_usb_gyro_values (ZCM1): invalid calibration data (zero divisor): x=%d y=%d z=%d", x, y, z);
+			device.calibration.is_valid = false;
+			device.calibration.gyro_x_gain = 1.0f;
+			device.calibration.gyro_y_gain = 1.0f;
+			device.calibration.gyro_z_gain = 1.0f;
+			device.calibration.gyro_x_offset = 0;
+			device.calibration.gyro_y_offset = 0;
+			device.calibration.gyro_z_offset = 0;
+			break;
+		}
 
 		// Per frame drift taken into account using adjusted gain values
 		device.calibration.gyro_x_gain = factor / static_cast<float>(x);
@@ -223,6 +251,20 @@ void psmove_calibration_get_usb_gyro_values(const reports::ps_move_calibration_b
 		constexpr f32 calibration_hi = calibration_rpm * rpm_to_rad_per_sec;
 		constexpr f32 calibration_low = -calibration_rpm * rpm_to_rad_per_sec;
 		constexpr f32 factor = calibration_hi - calibration_low;
+
+		// Guard against malicious/corrupt device data that would make a divisor zero
+		if (x2 == x1 || y2 == y1 || z2 == z1)
+		{
+			move_log.error("psmove_calibration_get_usb_gyro_values (ZCM2): invalid calibration data (zero range): x=(%d,%d) y=(%d,%d) z=(%d,%d)", x1, x2, y1, y2, z1, z2);
+			device.calibration.is_valid = false;
+			device.calibration.gyro_x_gain = 1.0f;
+			device.calibration.gyro_y_gain = 1.0f;
+			device.calibration.gyro_z_gain = 1.0f;
+			device.calibration.gyro_x_offset = static_cast<f32>(dx);
+			device.calibration.gyro_y_offset = static_cast<f32>(dy);
+			device.calibration.gyro_z_offset = static_cast<f32>(dz);
+			break;
+		}
 
 		// Compute the gain value (the slope of the gyro reading/angular speed line)
 		device.calibration.gyro_x_gain = factor / static_cast<f32>(x2 - x1);

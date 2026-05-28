@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "sys_hid.h"
 
+#include "Emu/Memory/vm.h"
 #include "Emu/Memory/vm_var.h"
 
 #include "Emu/Cell/PPUThread.h"
@@ -70,6 +71,12 @@ error_code sys_hid_manager_ioctl(u32 hid_handle, u32 pkg_id, vm::ptr<void> buf, 
 	{
 		// Return what realhw seems to return
 		// TODO: Figure out what this corresponds to
+		if (!buf || buf_size < sizeof(sys_hid_info_2) ||
+			!vm::check_addr(buf.addr(), vm::page_writable, sizeof(sys_hid_info_2)))
+		{
+			return CELL_EFAULT;
+		}
+
 		auto info = vm::static_ptr_cast<sys_hid_info_2>(buf);
 		info->vid = 0x054C;
 		info->pid = 0x0268;
@@ -79,6 +86,12 @@ error_code sys_hid_manager_ioctl(u32 hid_handle, u32 pkg_id, vm::ptr<void> buf, 
 	}
 	else if (pkg_id == 5)
 	{
+		if (!buf || buf_size < sizeof(sys_hid_info_5) ||
+			!vm::check_addr(buf.addr(), vm::page_writable, sizeof(sys_hid_info_5)))
+		{
+			return CELL_EFAULT;
+		}
+
 		auto info = vm::static_ptr_cast<sys_hid_info_5>(buf);
 		info->vid = 0x054C;
 		info->pid = 0x0268;
@@ -86,6 +99,12 @@ error_code sys_hid_manager_ioctl(u32 hid_handle, u32 pkg_id, vm::ptr<void> buf, 
 	// pkg_id == 6 == setpressmode?
 	else if (pkg_id == 0x68)
 	{
+		if (!buf || buf_size < sizeof(sys_hid_ioctl_68) ||
+			!vm::check_addr(buf.addr(), vm::page_writable, sizeof(sys_hid_ioctl_68)))
+		{
+			return CELL_EFAULT;
+		}
+
 		[[maybe_unused]] auto info = vm::static_ptr_cast<sys_hid_ioctl_68>(buf);
 		//info->unk2 = 0;
 	}
@@ -170,7 +189,12 @@ error_code sys_hid_manager_read(u32 handle, u32 pkg_id, vm::ptr<void> buf, u64 b
 		vm::var<CellPadData> tmpData;
 		if ((cellPadGetData(0, +tmpData) == CELL_OK) && tmpData->len > 0)
 		{
-			u64 cpySize = std::min(static_cast<u64>(tmpData->len) * sizeof(u16), buf_size * sizeof(u16));
+			// buf_size is the caller-provided byte count; don't multiply it by sizeof(u16)
+			const u64 cpySize = std::min<u64>(static_cast<u64>(tmpData->len) * sizeof(u16), buf_size);
+			if (cpySize && !vm::check_addr(buf.addr(), vm::page_writable, cpySize))
+			{
+				return CELL_EFAULT;
+			}
 			memcpy(buf.get_ptr(), &tmpData->button, cpySize);
 			return not_an_error(cpySize);
 		}
@@ -181,7 +205,12 @@ error_code sys_hid_manager_read(u32 handle, u32 pkg_id, vm::ptr<void> buf, u64 b
 		vm::var<CellPadData> tmpData;
 		if ((cellPadGetData(0, +tmpData) == CELL_OK) && tmpData->len > 0)
 		{
-			u64 cpySize = std::min(static_cast<u64>(tmpData->len) * sizeof(u16), buf_size * sizeof(u16));
+			// buf_size is the caller-provided byte count; don't multiply it by sizeof(u16)
+			const u64 cpySize = std::min<u64>(static_cast<u64>(tmpData->len) * sizeof(u16), buf_size);
+			if (cpySize && !vm::check_addr(buf.addr(), vm::page_writable, cpySize))
+			{
+				return CELL_EFAULT;
+			}
 			memcpy(buf.get_ptr(), &tmpData->button, cpySize);
 			return not_an_error(cpySize / 2);
 		}

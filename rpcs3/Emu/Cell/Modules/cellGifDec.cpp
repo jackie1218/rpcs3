@@ -589,7 +589,7 @@ error_code cellGifDecDecodeData(vm::ptr<GifDecoder> mainHandle, vm::cptr<GifStre
 		}
 		else
 		{
-			const auto img = std::make_unique<uint[]>(image_size);
+			const auto img = std::make_unique<uint[]>(image_size / sizeof(uint));
 			uint* source_current = reinterpret_cast<uint*>(image.get());
 			uint* dest_current = img.get();
 			for (uint i = 0; i < image_size / nComponents; i++)

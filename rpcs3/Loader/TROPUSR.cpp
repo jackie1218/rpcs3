@@ -116,12 +116,32 @@ bool TROPUSRLoader::LoadTables()
 		return false;
 	}
 
+	const u64 file_size = m_file.size();
+
+	auto fits_in_file = [&](u64 offset, u64 count, u64 entry_size) -> bool
+	{
+		// Reject obviously bogus headers (overflow or read past EOF) before seeking.
+		if (entry_size == 0)
+			return false;
+		if (count > file_size / entry_size)
+			return false;
+		const u64 total = count * entry_size;
+		if (offset > file_size || total > file_size - offset)
+			return false;
+		return true;
+	};
+
 	for (const TROPUSRTableHeader& tableHeader : m_tableHeaders)
 	{
-		m_file.seek(tableHeader.offset);
-
 		if (tableHeader.type == 4u)
 		{
+			if (!fits_in_file(tableHeader.offset, tableHeader.entries_count, sizeof(TROPUSREntry4)))
+			{
+				trp_log.error("TROPUSR table4 out of bounds (offset=0x%llx, entries=0x%x, file=0x%llx)", +tableHeader.offset, +tableHeader.entries_count, file_size);
+				return false;
+			}
+
+			m_file.seek(tableHeader.offset);
 			m_table4.clear();
 
 			if (!m_file.read(m_table4, tableHeader.entries_count))
@@ -130,6 +150,13 @@ bool TROPUSRLoader::LoadTables()
 
 		if (tableHeader.type == 6u)
 		{
+			if (!fits_in_file(tableHeader.offset, tableHeader.entries_count, sizeof(TROPUSREntry6)))
+			{
+				trp_log.error("TROPUSR table6 out of bounds (offset=0x%llx, entries=0x%x, file=0x%llx)", +tableHeader.offset, +tableHeader.entries_count, file_size);
+				return false;
+			}
+
+			m_file.seek(tableHeader.offset);
 			m_table6.clear();
 
 			if (!m_file.read(m_table6, tableHeader.entries_count))

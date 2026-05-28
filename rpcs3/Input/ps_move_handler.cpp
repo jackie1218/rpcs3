@@ -319,7 +319,10 @@ void ps_move_handler::check_add_device(hid_device* hidDevice, hid_enumerated_dev
 
 	ps_move_calibration_blob calibration {};
 
-	for (int i = 0; i < 2; i++)
+	// ZCM1 has three calibration blocks (0x00, 0x01, 0x82); ZCM2 has two (0x00, 0x81)
+	const int num_calibration_blocks = (device->model == ps_move_model::ZCM1) ? 3 : 2;
+
+	for (int i = 0; i < num_calibration_blocks; i++)
 	{
 		std::array<u8, PSMOVE_CALIBRATION_SIZE> cal {};
 		cal[0] = 0x10;
@@ -327,6 +330,14 @@ void ps_move_handler::check_add_device(hid_device* hidDevice, hid_enumerated_dev
 		if (res < 0)
 		{
 			move_log.error("connect_move_device: hid_get_feature_report 0x10 (calibration) failed! result=%d, error=%s", res, hid_error(device->hidDevice));
+			device->calibration.is_valid = false;
+			break;
+		}
+
+		// Require the device to return the full feature report; otherwise parsing would consume zero-initialized tail bytes
+		if (res != static_cast<int>(cal.size()))
+		{
+			move_log.error("connect_move_device: hid_get_feature_report 0x10 (calibration) returned short report: %d of %zu bytes", res, cal.size());
 			device->calibration.is_valid = false;
 			break;
 		}

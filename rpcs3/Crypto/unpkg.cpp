@@ -10,6 +10,7 @@
 #include "Emu/VFS.h"
 #include "unpkg.h"
 #include "util/sysinfo.hpp"
+#include "util/asm.hpp"
 #include "Loader/PSF.h"
 
 #include <filesystem>
@@ -190,7 +191,7 @@ bool package_reader::read_header()
 		m_file = fs::make_gather(std::move(filelist));
 	}
 
-	if (m_header.data_size + m_header.data_offset > m_header.pkg_size)
+	if (utils::add_saturate<u64>(m_header.data_size, m_header.data_offset) > m_header.pkg_size)
 	{
 		pkg_log.error("PKG data size mismatch (data_size=0x%llx, data_offset=0x%llx, file_size=0x%llx)", m_header.data_size, m_header.data_offset, m_header.pkg_size);
 		return false;
@@ -208,6 +209,18 @@ bool package_reader::read_metadata()
 	// Read package metadata
 
 	archive_seek(m_header.meta_offset);
+
+	// Each metadata packet is at minimum 8 bytes (id + size). Reject obviously bogus
+	// meta_count values before iterating, so we don't spend forever consuming garbage.
+	const u64 max_meta_count = m_header.meta_offset < m_header.pkg_size
+		? (m_header.pkg_size - m_header.meta_offset) / 8
+		: 0;
+
+	if (m_header.meta_count > max_meta_count)
+	{
+		pkg_log.error("PKG meta_count=0x%x exceeds available space after meta_offset (max=0x%llx)", m_header.meta_count, max_meta_count);
+		return false;
+	}
 
 	for (u32 i = 0; i < m_header.meta_count; i++)
 	{
@@ -355,7 +368,8 @@ bool package_reader::read_metadata()
 		}
 		case 0xA:
 		{
-			if (packet.size > 8)
+			// Bound install-dir packets to a sane range: must be > 8 (header) and not absurdly large.
+			if (packet.size > 8 && packet.size <= 1024)
 			{
 				// Read an actual installation directory (DLC)
 				m_install_dir.resize(packet.size);
@@ -526,6 +540,15 @@ bool package_reader::set_decryption_key()
 bool package_reader::read_entries(std::vector<PKGEntry>& entries)
 {
 	entries.clear();
+
+	// Cap file_count against the actual PKG size to prevent a guest-controlled
+	// gigantic allocation when the header reports an absurd number of entries.
+	if (m_header.file_count > m_file.size() / sizeof(PKGEntry))
+	{
+		pkg_log.error("PKG file_count=0x%x exceeds file capacity (file_size=0x%llx)", m_header.file_count, m_file.size());
+		return false;
+	}
+
 	entries.resize(m_header.file_count + BUF_PADDING / sizeof(PKGEntry) + 1);
 
 	const usz read_size = decrypt(0, m_header.file_count * sizeof(PKGEntry), m_header.pkg_platform == PKG_PLATFORM_TYPE_PSP_PSVITA ? PKG_AES_KEY2 : m_dec_key.data(), entries.data());

@@ -381,10 +381,7 @@ error_code cellSubDisplayGetTouchInfo(s32 groupId, vm::ptr<CellSubDisplayTouchIn
 		return CELL_SUBDISPLAY_ERROR_NOT_SUPPORTED;
 	}
 
-	if (*pNumTouchInfo > CELL_SUBDISPLAY_TOUCH_MAX_TOUCH_INFO)
-	{
-		*pNumTouchInfo = CELL_SUBDISPLAY_TOUCH_MAX_TOUCH_INFO;
-	}
+	*pNumTouchInfo = std::clamp<s32>(*pNumTouchInfo, 0, CELL_SUBDISPLAY_TOUCH_MAX_TOUCH_INFO);
 
 	std::memcpy(pTouchInfo.get_ptr(), manager.touch_info.data(), *pNumTouchInfo * sizeof(CellSubDisplayTouchInfo));
 

@@ -829,9 +829,12 @@ bool EDATADecrypter::ReadHeader()
 			//
 		}
 		// Type 2: Use key from RAP file (RIF key). (also used for type 1 at the moment)
-		else 
+		else
 		{
-			const std::string rap_path = rpcs3::utils::get_rap_file_path(npdHeader.content_id);
+			// NPD_HEADER::content_id is char[0x30] without a guaranteed terminator;
+			// bound the string to the field size to avoid reading past the buffer.
+			const std::string content_id_str(npdHeader.content_id, strnlen(npdHeader.content_id, sizeof(npdHeader.content_id)));
+			const std::string rap_path = rpcs3::utils::get_rap_file_path(content_id_str);
 
 			if (fs::file rap{rap_path}; rap && rap.size() >= sizeof(dec_key))
 			{
@@ -867,7 +870,13 @@ bool EDATADecrypter::ReadHeader()
 	}
 
 	file_size = edatHeader.file_size;
-	total_blocks = ::narrow<u32>(utils::aligned_div(edatHeader.file_size, edatHeader.block_size));
+	const u64 total_blocks_u64 = utils::aligned_div(edatHeader.file_size, edatHeader.block_size);
+	if (total_blocks_u64 > UINT32_MAX)
+	{
+		edat_log.error("NPDRM EDAT has too many blocks 0x%llx (file_size=0x%llx, block_size=0x%x)", total_blocks_u64, edatHeader.file_size, edatHeader.block_size);
+		return false;
+	}
+	total_blocks = static_cast<u32>(total_blocks_u64);
 
 	// Try decrypting the first block instead
 	u8 data_sample[1];
@@ -893,7 +902,9 @@ u64 EDATADecrypter::ReadData(u64 pos, u8* data, u64 size)
 	// Now we need to offset things to account for the actual 'range' requested
 	const u64 startOffset = pos % edatHeader.block_size;
 
-	const u64 num_blocks = utils::aligned_div(startOffset + size, edatHeader.block_size);
+	// Guard against u64 overflow when computing the block window for this read.
+	const u64 window = utils::add_saturate<u64>(startOffset, size);
+	const u64 num_blocks = utils::aligned_div(window, edatHeader.block_size);
 
 	// Find and decrypt block range covering pos + size
 	const u32 starting_block = ::narrow<u32>(pos / edatHeader.block_size);

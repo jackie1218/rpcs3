@@ -337,7 +337,7 @@ error_code cellJpgDecDecodeData(u32 mainHandle, u32 subHandle, vm::ptr<u8> data,
 		}
 		else
 		{
-			std::vector<u32> img(image_size);
+			std::vector<u32> img(image_size / sizeof(u32));
 			const u32* source_current = reinterpret_cast<const u32*>(image.get());
 			u32* dest_current = img.data();
 			for (u32 i = 0; i < image_size / nComponents; i++)

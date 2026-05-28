@@ -503,6 +503,20 @@ private:
 			// PHDR type.
 			if (meta_shdr[i].type == 2)
 			{
+				// data_buf only contains sections that DecryptData() actually copied
+				// (encrypted == 3 with valid key/iv indices). Mirror that filter here
+				// so data_buf_offset stays in sync.
+				const bool in_data_buf = meta_shdr[i].encrypted == 3
+					&& meta_shdr[i].key_idx < meta_hdr.key_count
+					&& meta_shdr[i].iv_idx < meta_hdr.key_count;
+
+				if (!in_data_buf)
+				{
+					// Nothing was decrypted for this section; skip the write entirely
+					// and do not advance data_buf_offset.
+					continue;
+				}
+
 				// Decompress if necessary.
 				if (meta_shdr[i].compressed == 2)
 				{

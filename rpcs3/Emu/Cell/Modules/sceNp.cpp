@@ -3733,6 +3733,10 @@ error_code sceNpLookupTitleSmallStorageAsync(s32 transId, vm::ptr<void> data, u3
 	}
 
 	// TSS are game specific data we don't have access to, set buf to 0, return size 0
+	if (maxSize > SCE_NP_TSS_MAX_SIZE)
+	{
+		return SCE_NP_COMMUNITY_ERROR_BODY_TOO_LARGE;
+	}
 	std::memset(data.get_ptr(), 0, maxSize);
 	*contentLength = 0;
 
@@ -5668,6 +5672,12 @@ error_code scenp_score_record_score(s32 transId, SceNpScoreBoardId boardId, SceN
 
 			data = &option->vsInfo->data[0];
 			data_size = option->vsInfo->infoSize;
+
+			// vsInfo->data is a fixed-size buffer; reject sizes that would read past it.
+			if (data_size > SCE_NP_SCORE_VARIABLE_SIZE_GAMEINFO_MAXSIZE)
+			{
+				return SCE_NP_COMMUNITY_ERROR_INVALID_ARGUMENT;
+			}
 		}
 	}
 	else

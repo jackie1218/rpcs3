@@ -232,8 +232,25 @@ bool tar_object::extract(const std::string& prefix_path, bool is_vfs)
 		const std::string& name = iter->first;
 
 		// Reject path traversal in entry names before any path is formed.
-		// Block "..", absolute paths, and Windows backslashes regardless of VFS mode.
-		if (name.find("..") != umax || name.find('\\') != umax || (!name.empty() && name.front() == '/'))
+		// Split on '/' and block any component equal to ".." or ".".
+		// Also block Windows backslashes and absolute paths regardless of VFS mode.
+		auto has_unsafe_component = [](const std::string& n)
+		{
+			usz start = 0;
+			while (start <= n.size())
+			{
+				const usz end = n.find('/', start);
+				const std::string_view comp(n.data() + start, (end == umax ? n.size() : end) - start);
+				if (comp == ".." || comp == ".")
+					return true;
+				if (end == umax)
+					break;
+				start = end + 1;
+			}
+			return false;
+		};
+
+		if (has_unsafe_component(name) || name.find('\\') != umax || (!name.empty() && name.front() == '/'))
 		{
 			tar_log.error("TAR Loader: refusing entry with unsafe name '%s'", name);
 			return false;

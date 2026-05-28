@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Emu/IdManager.h"
+#include "Emu/Memory/vm.h"
 
 #include "Emu/Cell/lv2/sys_event.h"
 #include "Emu/Cell/ErrorCodes.h"
@@ -301,6 +302,11 @@ error_code sys_config_open(u32 equeue_hdl, vm::ptr<u32> out_config_hdl)
 {
 	sys_config.trace("sys_config_open(equeue_hdl=0x%x, out_config_hdl=*0x%x)", equeue_hdl, out_config_hdl);
 
+	if (!out_config_hdl)
+	{
+		return CELL_EFAULT;
+	}
+
 	// Find queue with the given ID
 	const auto queue = idm::get_unlocked<lv2_obj, lv2_event_queue>(equeue_hdl);
 	if (!queue)
@@ -377,6 +383,22 @@ error_code sys_config_add_service_listener(u32 config_hdl, sys_config_service_id
 {
 	sys_config.trace("sys_config_add_service_listener(config_hdl=0x%x, service_id=0x%llx, min_verbosity=0x%llx, in=*0x%x, size=%lld, type=0x%llx, out_listener_hdl=*0x%x)", config_hdl, service_id, min_verbosity, in, size, type, out_listener_hdl);
 
+	if (!out_listener_hdl)
+	{
+		return CELL_EFAULT;
+	}
+
+	// Validate guest-supplied buffer/size before passing to the listener ctor
+	if (size > 0x1000)
+	{
+		return CELL_EINVAL;
+	}
+
+	if (size > 0 && (!in || !vm::check_addr(in.addr(), vm::page_readable, size)))
+	{
+		return CELL_EFAULT;
+	}
+
 	// Find sys_config handle object with the given ID
 	auto cfg = idm::get_unlocked<lv2_config_handle>(config_hdl);
 	if (!cfg)
@@ -424,6 +446,22 @@ error_code sys_config_remove_service_listener(u32 config_hdl, u32 listener_hdl)
 error_code sys_config_register_service(u32 config_hdl, sys_config_service_id service_id, u64 user_id, u64 verbosity, vm::ptr<u8> data_buf, u64 size, vm::ptr<u32> out_service_hdl)
 {
 	sys_config.trace("sys_config_register_service(config_hdl=0x%x, service_id=0x%llx, user_id=0x%llx, verbosity=0x%llx, data_but=*0x%llx, size=%lld, out_service_hdl=*0x%llx)", config_hdl, service_id, user_id, verbosity, data_buf, size, out_service_hdl);
+
+	if (!out_service_hdl)
+	{
+		return CELL_EFAULT;
+	}
+
+	// Validate guest-supplied buffer/size before passing to the service ctor
+	if (size > 0x1000)
+	{
+		return CELL_EINVAL;
+	}
+
+	if (size > 0 && (!data_buf || !vm::check_addr(data_buf.addr(), vm::page_readable, size)))
+	{
+		return CELL_EFAULT;
+	}
 
 	// Find sys_config handle object with the given ID
 	const auto cfg = idm::get_unlocked<lv2_config_handle>(config_hdl);
